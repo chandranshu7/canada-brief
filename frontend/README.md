@@ -61,5 +61,5 @@ frontend/
 
 ## Notes
 
-- Article images use plain `<img>` so any remote `image_url` from the API works without extra image-domain config.
+- Hero story images use `next/image` with `unoptimized` for arbitrary CDN URLs (full quality), and `images.weserv.nl` for optional upscaling when the URL looks like a thumbnail.
 - Filters apply client-side to the loaded list (category + search).

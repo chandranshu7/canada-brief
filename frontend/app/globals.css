@@ -55,4 +55,10 @@ html {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Hero photos: GPU layer + slight scale for a premium, crisp feel on retina */
+  .hero-image-crisp {
+    transform: translate3d(0, 0, 0) scale(1.05);
+    backface-visibility: hidden;
+  }
 }

@@ -101,13 +101,95 @@ def _looks_like_image_url(url: str) -> bool:
     return path.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"))
 
 
-def _url_from_media_dict(item: dict) -> str:
+def _normalize_page_image_url(base: str, raw: str) -> str:
+    """Return a full absolute http(s) URL for an image reference."""
+    u = (raw or "").strip()
+    if not u:
+        return ""
+    if u.startswith("//"):
+        u = "https:" + u
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    if base and (base.startswith("http://") or base.startswith("https://")):
+        return urljoin(base, u)
+    return ""
+
+
+def _url_from_media_dict(item: dict, base_link: str = "") -> str:
     if not isinstance(item, dict):
         return ""
     u = (item.get("url") or item.get("href") or "").strip()
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    return ""
+    if not u:
+        return ""
+    return _normalize_page_image_url(base_link, u)
+
+
+def _media_item_pixel_score(item: dict) -> int:
+    """Prefer larger declared dimensions (or file size) when picking among RSS media items."""
+    if not isinstance(item, dict):
+        return 0
+    w, h = item.get("width"), item.get("height")
+    try:
+        wi = int(str(w).replace("px", "").strip()) if w is not None else 0
+        hi = int(str(h).replace("px", "").strip()) if h is not None else 0
+        if wi > 0 and hi > 0:
+            return wi * hi
+    except (ValueError, TypeError):
+        pass
+    for key in ("filesize", "fileSize", "length"):
+        v = item.get(key)
+        try:
+            if v is not None:
+                return int(v)
+        except (ValueError, TypeError):
+            continue
+    return 0
+
+
+def _is_probably_image_media_item(item: dict, url: str) -> bool:
+    typ = (item.get("type") or "").lower()
+    medium = (item.get("medium") or "").lower()
+    return bool(
+        typ.startswith("image/")
+        or medium == "image"
+        or _looks_like_image_url(url)
+    )
+
+
+def _best_media_content_url(entry, base_link: str) -> str:
+    """Highest-resolution (or largest) media_content image URL."""
+    candidates: List[Tuple[int, int, str]] = []
+    for item in entry.get("media_content") or []:
+        if not isinstance(item, dict):
+            continue
+        u = _url_from_media_dict(item, base_link)
+        if not u:
+            continue
+        if not _is_probably_image_media_item(item, u):
+            continue
+        score = _media_item_pixel_score(item)
+        candidates.append((score, len(u), u))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return candidates[0][2]
+
+
+def _best_media_thumbnail_url(entry, base_link: str) -> str:
+    """Largest media_thumbnail when multiple are present (avoid tiny previews)."""
+    candidates: List[Tuple[int, int, str]] = []
+    for item in entry.get("media_thumbnail") or []:
+        if not isinstance(item, dict):
+            continue
+        u = _url_from_media_dict(item, base_link)
+        if not u:
+            continue
+        score = _media_item_pixel_score(item)
+        candidates.append((score, len(u), u))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return candidates[0][2]
 
 
 def _img_src_from_html(fragment: str) -> str:
@@ -130,54 +212,61 @@ def _img_src_from_html(fragment: str) -> str:
 
 
 def _image_from_entry_html(entry) -> str:
-    u = _img_src_from_html(entry.get("summary") or "")
+    """
+    Last-resort: first <img src> in RSS summary/content HTML.
+    Returns an absolute URL when possible (relative to article link).
+    """
+    base = (entry.get("link") or "").strip()
+
+    def _first(fragment: str) -> str:
+        u = _img_src_from_html(fragment or "")
+        return _normalize_page_image_url(base, u) if u else ""
+
+    u = _first(entry.get("summary") or "")
     if u:
         return u
     sd = entry.get("summary_detail")
     if isinstance(sd, dict):
-        u = _img_src_from_html(sd.get("value") or "")
+        u = _first(sd.get("value") or "")
         if u:
             return u
     for block in entry.get("content") or []:
         if isinstance(block, dict):
-            u = _img_src_from_html(block.get("value") or "")
+            u = _first(block.get("value") or "")
             if u:
                 return u
     return ""
 
 
-def _extract_image_url(entry) -> str:
-    for item in entry.get("media_content") or []:
-        u = _url_from_media_dict(item)
-        if not u:
-            continue
-        typ = (item.get("type") or "").lower()
-        medium = (item.get("medium") or "").lower()
-        if typ.startswith("image/") or medium == "image" or _looks_like_image_url(u):
-            return u
-    for item in entry.get("media_content") or []:
-        u = _url_from_media_dict(item)
-        if u and _looks_like_image_url(u):
-            return u
-
-    for item in entry.get("media_thumbnail") or []:
-        u = _url_from_media_dict(item)
-        if u:
-            return u
+def _extract_rss_structured_image(entry, base_link: str) -> str:
+    """
+    RSS-only image candidates (no HTTP fetch).
+    Order: best media_content → best media_thumbnail → image field → enclosures → typed image links.
+    """
+    u = _best_media_content_url(entry, base_link)
+    if u:
+        return u
+    u = _best_media_thumbnail_url(entry, base_link)
+    if u:
+        return u
 
     img = entry.get("image")
     if isinstance(img, dict):
-        u = (img.get("href") or img.get("url") or "").strip()
-        if u.startswith("http://") or u.startswith("https://"):
+        raw = (img.get("href") or img.get("url") or "").strip()
+        u = _normalize_page_image_url(base_link, raw)
+        if u:
             return u
-    elif isinstance(img, str) and (img.startswith("http://") or img.startswith("https://")):
-        return img.strip()
+    elif isinstance(img, str) and img.strip():
+        u = _normalize_page_image_url(base_link, img.strip())
+        if u:
+            return u
 
     for enc in entry.get("enclosures") or []:
         if not isinstance(enc, dict):
             continue
-        u = (enc.get("href") or enc.get("url") or "").strip()
-        if not (u.startswith("http://") or u.startswith("https://")):
+        raw = (enc.get("href") or enc.get("url") or "").strip()
+        u = _normalize_page_image_url(base_link, raw)
+        if not u:
             continue
         typ = (enc.get("type") or "").lower()
         if typ.startswith("image/") or (not typ and _looks_like_image_url(u)):
@@ -189,22 +278,48 @@ def _extract_image_url(entry) -> str:
         typ = (link.get("type") or "").lower()
         if not typ.startswith("image/"):
             continue
-        u = (link.get("href") or link.get("url") or "").strip()
-        if u.startswith("http://") or u.startswith("https://"):
+        raw = (link.get("href") or link.get("url") or "").strip()
+        u = _normalize_page_image_url(base_link, raw)
+        if u:
             return u
 
-    return _image_from_entry_html(entry)
+    return ""
 
 
-def _normalize_page_image_url(base: str, raw: str) -> str:
-    u = (raw or "").strip()
-    if not u:
+def _best_og_image_from_soup(soup, article_url: str) -> str:
+    """
+    Some publishers emit multiple og:image tags (sizes). Prefer the largest declared dimensions.
+    """
+    urls: List[str] = []
+    for tag in soup.find_all("meta", property="og:image"):
+        c = (tag.get("content") or "").strip()
+        if not c:
+            continue
+        u = _normalize_page_image_url(article_url, c)
+        if u:
+            urls.append(u)
+    if not urls:
         return ""
-    if u.startswith("//"):
-        u = "https:" + u
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    return urljoin(base, u)
+    if len(urls) == 1:
+        return urls[0]
+
+    def _score(u: str) -> Tuple[int, int]:
+        """Higher is better: pixel hints in URL path/query, then raw length."""
+        low = u.lower()
+        score = len(u)
+        m = re.search(r"[?&]w=(\d+)", low)
+        if m:
+            try:
+                score += int(m.group(1)) * 10
+            except ValueError:
+                pass
+        if any(x in low for x in ("large", "xlarge", "full", "hero", "wide", "1200", "1600")):
+            score += 5000
+        if any(x in low for x in ("thumb", "thumbnail", "small", "icon", "avatar")):
+            score -= 3000
+        return (score, len(u))
+
+    return max(urls, key=_score)
 
 
 def _extract_image_from_article_page(
@@ -227,11 +342,9 @@ def _extract_image_from_article_page(
     except Exception:
         return ""
 
-    tag = soup.find("meta", property="og:image")
-    if tag and tag.get("content"):
-        u = _normalize_page_image_url(article_url, tag["content"])
-        if u:
-            return u
+    u = _best_og_image_from_soup(soup, article_url)
+    if u:
+        return u
 
     tag = soup.find("meta", attrs={"name": "twitter:image"})
     if not tag:
@@ -620,8 +733,11 @@ def _parse_feed_response(
             )
             category = infer_category(headline, article_text)
             region = infer_region(headline, article_text)
-            # RSS-only images here — article-page scrape is limited to top stories later.
-            image_url = _extract_image_url(entry) or ""
+            # RSS structured media first; HTML summary + article-page og:image applied in fetch_all_feeds.
+            base_link = link
+            rss_image = _extract_rss_structured_image(entry, base_link)
+            html_fallback_image = _image_from_entry_html(entry) or ""
+            image_url = rss_image or ""
 
             feed_label = specific_source_label(source_name)
             label = refine_article_source(link, feed_label)
@@ -641,6 +757,8 @@ def _parse_feed_response(
                 "category": category,
                 "region": region,
                 "image_url": image_url,
+                # Used only during ingest if RSS + og:image are empty; stripped before DB save.
+                "_image_html_fallback": html_fallback_image,
                 "published_raw": published_dt,
                 # Kept for DB rss_excerpt + lazy AI later; trimmed at save.
                 "rss_excerpt": (article_text or "")[:12000],
@@ -793,20 +911,31 @@ def fetch_all_feeds() -> List[Dict]:
 
     t_image_start = time.time()
     for idx, article in enumerate(limited):
-        if idx < IMAGE_SCRAPE_MAX_ARTICLES:
-            if not (article.get("image_url") or "").strip():
+        link = (article.get("link") or "").strip()
+        raw = (article.get("image_url") or "").strip()
+        src = "rss_structured"
+        if not raw:
+            if idx < IMAGE_SCRAPE_MAX_ARTICLES:
                 try:
-                    article["image_url"] = (
-                        _extract_image_from_article_page(
-                            article.get("link") or ""
-                        )
-                        or ""
-                    )
+                    raw = (_extract_image_from_article_page(link) or "").strip()
                 except Exception:
-                    article["image_url"] = ""
-        else:
-            if not (article.get("image_url") or "").strip():
-                article["image_url"] = ""
+                    raw = ""
+                if raw:
+                    src = "og_page"
+            else:
+                raw = ""
+        if not raw:
+            raw = (article.get("_image_html_fallback") or "").strip()
+            if raw:
+                src = "summary_html"
+        raw = _normalize_page_image_url(link, raw) if raw else ""
+        article.pop("_image_html_fallback", None)
+        article["image_url"] = raw
+        if raw and idx < 3:
+            print(
+                f"[fetch_news] image_resolved source={src} "
+                f"link={link[:100]!r} url={raw[:140]!r}"
+            )
     image_s = time.time() - t_image_start
 
     trimmed: List[Dict] = []

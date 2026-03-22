@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { Article } from "@/lib/types";
 import {
@@ -6,21 +7,26 @@ import {
   isMultiSourceCluster,
 } from "@/lib/clusterUi";
 import { formatPublishedDisplay } from "@/lib/formatPublished";
-import { categoryBadgeClass } from "./categoryStyles";
-import { sourceBadgeClass } from "./sourceStyles";
+import { getHeroImageDisplay } from "@/lib/heroImage";
 
 type SingleStoryHeroProps = {
   article: Article;
+  /** First-paint LCP hint for the visible card */
+  priority?: boolean;
 };
 
 const chipBase =
   "inline-flex max-w-[12rem] items-center truncate rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wide ring-1 sm:max-w-[14rem] sm:text-[10.5px]";
 
 /**
- * One dominant story card — web-focused, no swipe UI.
+ * One dominant story card — large hero image with title overlay (editorial / Apple News–style).
  */
-export function SingleStoryHero({ article }: SingleStoryHeroProps) {
+export function SingleStoryHero({
+  article,
+  priority = true,
+}: SingleStoryHeroProps) {
   const img = (article.image_url ?? "").trim();
+  const { src: imageSrc, viaProxy } = getHeroImageDisplay(img);
   const cat = article.category;
   const region = (article.region ?? "").trim();
   const sources = articleSourceList(article);
@@ -31,33 +37,43 @@ export function SingleStoryHero({ article }: SingleStoryHeroProps) {
 
   return (
     <article className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_20px_50px_-24px_rgba(15,23,42,0.2)] ring-1 ring-slate-900/[0.03]">
-      {/* position:relative is required so the gradient overlay cannot anchor to the viewport */}
+      {/* 60–70vh hero: fixed height reduces CLS; image uses fill + object-cover */}
       <div
-        className="relative isolate aspect-[21/10] w-full max-w-full overflow-hidden bg-slate-100 sm:aspect-[21/9]"
-        style={{ position: "relative" }}
+        className="relative isolate w-full overflow-hidden rounded-t-2xl bg-slate-100"
+        style={{
+          minHeight: "clamp(18rem, 65vh, 70vh)",
+          height: "min(70vh, 52rem)",
+        }}
       >
-        {img ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={img}
+        {imageSrc ? (
+          <Image
+            src={imageSrc}
             alt=""
-            className="h-full w-full object-cover"
-            sizes="(max-width: 768px) 100vw, 56rem"
+            fill
+            priority={priority}
+            quality={100}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 90vw, 896px"
+            unoptimized={!viaProxy}
+            className="hero-image-crisp object-cover object-center [image-rendering:auto]"
           />
         ) : (
-          <div className="h-full min-h-0 w-full bg-gradient-to-br from-slate-100 via-indigo-50/35 to-slate-50" />
+          <div
+            className="absolute inset-0 bg-gradient-to-br from-slate-100 via-indigo-50/35 to-slate-50"
+            aria-hidden
+          />
         )}
+
+        {/* Bottom → transparent so title stays readable */}
         <div
-          className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/50 via-black/8 to-transparent"
+          className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/75 via-black/35 via-40% to-transparent"
           aria-hidden
         />
-      </div>
 
-      <div className="space-y-4 px-6 py-7 sm:space-y-5 sm:px-9 sm:py-9">
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Meta chips — top */}
+        <div className="absolute left-0 right-0 top-0 z-[2] flex flex-wrap items-center gap-1.5 p-4 sm:p-6">
           {multi && (
             <span
-              className={`${chipBase} bg-amber-500/[0.12] text-amber-950/90 ring-amber-400/25`}
+              className={`${chipBase} bg-black/35 text-white ring-white/25 backdrop-blur-sm`}
             >
               {nSources} sources
             </span>
@@ -66,31 +82,36 @@ export function SingleStoryHero({ article }: SingleStoryHeroProps) {
             sources.map((s) => (
               <span
                 key={s}
-                className={`${chipBase} ${sourceBadgeClass(s)} opacity-[0.92]`}
+                className={`${chipBase} bg-black/35 text-white/95 ring-white/20 backdrop-blur-sm`}
               >
                 {s}
               </span>
             ))}
           {cat && (
             <span
-              className={`${chipBase} ${categoryBadgeClass(cat)} opacity-[0.95]`}
+              className={`${chipBase} bg-black/35 text-white/95 ring-white/20 backdrop-blur-sm`}
             >
               {cat}
             </span>
           )}
           {region && (
             <span
-              className={`${chipBase} bg-slate-50 text-slate-600 ring-slate-200/70`}
+              className={`${chipBase} bg-black/35 text-white/90 ring-white/20 backdrop-blur-sm`}
             >
               {region}
             </span>
           )}
         </div>
 
-        <h1 className="text-balance text-[1.75rem] font-bold leading-[1.18] tracking-[-0.02em] text-slate-950 sm:text-[2.125rem] sm:leading-[1.15]">
-          {article.title}
-        </h1>
+        {/* Title — bottom on image */}
+        <div className="absolute bottom-0 left-0 right-0 z-[2] p-5 pb-6 sm:p-8 sm:pb-8">
+          <h1 className="text-balance text-[1.5rem] font-bold leading-[1.15] tracking-[-0.02em] text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:text-[2rem] sm:leading-[1.12] md:text-[2.25rem]">
+            {article.title}
+          </h1>
+        </div>
+      </div>
 
+      <div className="space-y-4 rounded-b-2xl px-6 py-7 sm:space-y-5 sm:px-9 sm:py-9">
         {article.summary ? (
           <p className="max-w-[46ch] text-pretty text-[1.0625rem] leading-[1.72] text-slate-600 sm:text-[1.085rem] sm:leading-[1.75]">
             {article.summary}
