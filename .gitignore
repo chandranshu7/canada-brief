@@ -1,0 +1,40 @@
+# Environment (secrets live in backend/.env — see backend/.env.example)
+.env
+.env.*
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Data
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+
+# Logs & temp
+*.log
+logs/
+tmp/
+.temp/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,9 @@
+{
+  "name": "canada-brief",
+  "private": true,
+  "description": "Canada Brief — FastAPI + Next.js news aggregator",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend"
+  }
+}
