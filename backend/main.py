@@ -3,6 +3,7 @@ main.py - FastAPI entry point for the Canadian News App
 Exposes GET /news which returns summarized news from Canadian RSS feeds.
 """
 
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -10,9 +11,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load backend/.env before other imports (OPENAI_API_KEY, etc.)
+# Load backend/.env before other imports (DATABASE_URL, OPENAI_API_KEY, etc.)
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+from env import get_openai_api_key
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,6 +67,15 @@ def _public_article(row: dict) -> dict:
     return {k: row.get(k) for k in _ARTICLE_PUBLIC_KEYS}
 
 
+def _log_startup_config() -> None:
+    """Log database backend and whether OPENAI_API_KEY is set (never log secret values)."""
+    print("[startup] database backend: PostgreSQL (SQLAlchemy + psycopg)")
+    db_ok = bool((os.environ.get("DATABASE_URL") or "").strip())
+    print(f"[startup] DATABASE_URL: {'set' if db_ok else 'NOT SET (required)'}")
+    openai_ok = bool(get_openai_api_key())
+    print(f"[startup] OPENAI_API_KEY: {'present' if openai_ok else 'absent'}")
+
+
 app = FastAPI(title="Canada Brief API", version="1.0.0")
 
 app.add_middleware(
@@ -78,6 +89,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup():
+    _log_startup_config()
     init_db()
 
 
@@ -323,7 +335,7 @@ def get_news(
             raise HTTPException(status_code=502, detail=f"Ingest failed: {e}") from e
     else:
         refresh_mode = "read"
-        print("[/news] serving from SQLite")
+        print("[/news] serving from database")
 
     total = count_articles()
     offset = (page - 1) * page_size

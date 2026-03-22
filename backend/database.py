@@ -1,18 +1,39 @@
 """
-database.py - SQLite setup and CRUD helpers using Python's built-in sqlite3.
-No ORM needed for an MVP of this size.
+database.py — SQLAlchemy + PostgreSQL only (Render / production).
+
+DATABASE_URL must be set (no local SQLite). Driver: postgresql+psycopg (psycopg3).
+
+List-like fields (sources, related_links) are stored as JSON text in TEXT columns.
 """
 
+from __future__ import annotations
+
 import json
-import os
-import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-DB_PATH = "news.db"
+from sqlalchemy import (
+    Column,
+    Float,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+    create_engine,
+    inspect,
+    insert,
+    text,
+)
+from sqlalchemy.engine import Engine
 
-# Columns inserted on save (no id — AUTOINCREMENT).
-# sources / related_links are stored as JSON text (list → string).
+from env import require_database_url
+
+# ---------------------------------------------------------------------------
+# Config: DATABASE_URL → PostgreSQL (required)
+# ---------------------------------------------------------------------------
+
+# Columns inserted on save (no id — autoincrement / SERIAL).
+# sources / related_links are stored as JSON text (list → string), same as SQLite MVP.
 ARTICLE_COLUMNS = (
     "title",
     "summary",
@@ -36,95 +57,119 @@ ARTICLE_COLUMNS = (
 # id + article fields for reads (pagination, lazy summary updates).
 READ_COLUMNS = ("id",) + ARTICLE_COLUMNS
 
+metadata = MetaData()
 
-def get_connection():
-    """Returns a new SQLite connection."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # rows behave like dicts
-    return conn
+# Declarative table used for INSERT and schema creation.
+# Postgres: INTEGER + SERIAL-style id; REAL rank_score maps to DOUBLE PRECISION.
+news_table = Table(
+    "news",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("title", Text, nullable=False),
+    Column("summary", Text),
+    # Default matches prior SQLite schema; inserts still set this explicitly.
+    Column("summary_status", Text, server_default=text("'pending'")),
+    Column("source", Text),
+    Column("source_group", Text),
+    Column("sources", Text),
+    Column("related_links", Text),
+    Column("link", Text),
+    Column("published", Text),
+    Column("category", Text),
+    Column("region", Text),
+    Column("image_url", Text),
+    Column("cluster_id", Integer),
+    Column("trending_score", Integer),
+    Column("rank_score", Float),
+    Column("rss_excerpt", Text),
+    Column("last_updated_at", Text),
+)
+
+_engine: Optional[Engine] = None
 
 
-def _schema_ok(conn) -> bool:
-    """Return True if `news` exists and has every article column."""
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='news'"
-    ).fetchone()
-    if not row:
+def _normalize_database_url(raw: str) -> str:
+    """
+    Render often provides postgres://… — SQLAlchemy + psycopg3 expects postgresql+psycopg://…
+    """
+    u = raw.strip()
+    if u.startswith("postgres://"):
+        return u.replace("postgres://", "postgresql+psycopg://", 1)
+    if u.startswith("postgresql://") and not u.startswith("postgresql+psycopg"):
+        return u.replace("postgresql://", "postgresql+psycopg://", 1)
+    return u
+
+
+def get_engine() -> Engine:
+    """Singleton SQLAlchemy engine from DATABASE_URL (PostgreSQL only)."""
+    global _engine
+    if _engine is not None:
+        return _engine
+
+    url = _normalize_database_url(require_database_url())
+    # pool_pre_ping: recover from stale connections (common on managed hosts like Render).
+    _engine = create_engine(url, pool_pre_ping=True)
+    return _engine
+
+
+def _schema_ok(engine: Engine) -> bool:
+    """True if `news` exists and has every article column."""
+    insp = inspect(engine)
+    if not insp.has_table("news"):
         return False
-    col_names = {c[1] for c in conn.execute("PRAGMA table_info(news)").fetchall()}
+    col_names = {c["name"] for c in insp.get_columns("news")}
     return all(c in col_names for c in ARTICLE_COLUMNS)
 
 
-def init_db():
+def init_db() -> None:
     """
     Ensure the `news` table exists with the expected columns.
 
-    For local MVP: if the table is missing or wrong, drop and recreate (data is cleared).
+    If the table is missing or incomplete (MVP behavior), drop and recreate — data cleared.
     """
-    db_abs = os.path.abspath(DB_PATH)
-    print(f"[db] using database: {db_abs}")
+    engine = get_engine()
 
-    with get_connection() as conn:
-        if _schema_ok(conn):
-            print("[db] news table schema OK")
-            return
+    if _schema_ok(engine):
+        print("[db] news table schema OK")
+        return
 
-        print("[db] Recreating news table (simple MVP reset for schema)")
-        conn.execute("DROP TABLE IF EXISTS news")
-        conn.execute(
-            """
-            CREATE TABLE news (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                title           TEXT NOT NULL,
-                summary         TEXT,
-                summary_status  TEXT DEFAULT 'pending',
-                source          TEXT,
-                source_group    TEXT,
-                sources         TEXT,
-                related_links   TEXT,
-                link            TEXT,
-                published       TEXT,
-                category        TEXT,
-                region          TEXT,
-                image_url       TEXT,
-                cluster_id      INTEGER,
-                trending_score  INTEGER,
-                rank_score      REAL,
-                rss_excerpt     TEXT,
-                last_updated_at TEXT
-            )
-            """
-        )
-        conn.commit()
-        print("[db] Created news table with all article fields")
+    print("[db] Recreating news table (simple MVP reset for schema)")
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS news"))
+        metadata.create_all(conn)
+    print("[db] Created news table with all article fields")
 
 
 def clear_articles() -> None:
     """Delete all articles from the news table."""
-    with get_connection() as conn:
-        conn.execute("DELETE FROM news")
-        conn.commit()
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM news"))
 
 
 def count_articles() -> int:
     """Total rows in news (for pagination)."""
-    with get_connection() as conn:
-        row = conn.execute("SELECT COUNT(*) FROM news").fetchone()
-    return int(row[0]) if row else 0
+    engine = get_engine()
+    with engine.connect() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM news")).scalar_one()
+    return int(n)
 
 
 def count_pending_articles() -> int:
     """Rows with summary_status pending (not yet successfully summarized)."""
-    with get_connection() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(*) FROM news
-            WHERE summary_status IS NULL
-               OR TRIM(COALESCE(summary_status, '')) = ''
-               OR LOWER(TRIM(summary_status)) = 'pending'
-            """
-        ).fetchone()
-    return int(row[0]) if row else 0
+    engine = get_engine()
+    with engine.connect() as conn:
+        n = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM news
+                WHERE summary_status IS NULL
+                   OR TRIM(COALESCE(summary_status, '')) = ''
+                   OR LOWER(TRIM(summary_status)) = 'pending'
+                """
+            )
+        ).scalar_one()
+    return int(n)
 
 
 def get_articles_page(offset: int, limit: int) -> List[Dict]:
@@ -135,16 +180,19 @@ def get_articles_page(offset: int, limit: int) -> List[Dict]:
     offset = max(0, int(offset))
     limit = max(1, min(int(limit), 100))
     cols = ", ".join(READ_COLUMNS)
-    with get_connection() as conn:
+    engine = get_engine()
+    with engine.connect() as conn:
         rows = conn.execute(
-            f"""
-            SELECT {cols} FROM news
-            ORDER BY COALESCE(rank_score, 0) DESC, id DESC
-            LIMIT ? OFFSET ?
-            """,
-            (limit, offset),
-        ).fetchall()
-    return [_article_from_row(row) for row in rows]
+            text(
+                f"""
+                SELECT {cols} FROM news
+                ORDER BY COALESCE(rank_score, 0) DESC, id DESC
+                LIMIT :lim OFFSET :off
+                """
+            ),
+            {"lim": limit, "off": offset},
+        ).mappings().all()
+    return [_article_from_row(r) for r in rows]
 
 
 def get_articles_top(limit: int) -> List[Dict]:
@@ -153,16 +201,19 @@ def get_articles_top(limit: int) -> List[Dict]:
     if limit == 0:
         return []
     cols = ", ".join(READ_COLUMNS)
-    with get_connection() as conn:
+    engine = get_engine()
+    with engine.connect() as conn:
         rows = conn.execute(
-            f"""
-            SELECT {cols} FROM news
-            ORDER BY COALESCE(rank_score, 0) DESC, id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-    return [_article_from_row(row) for row in rows]
+            text(
+                f"""
+                SELECT {cols} FROM news
+                ORDER BY COALESCE(rank_score, 0) DESC, id DESC
+                LIMIT :lim
+                """
+            ),
+            {"lim": limit},
+        ).mappings().all()
+    return [_article_from_row(r) for r in rows]
 
 
 def update_article_summary_fields(
@@ -170,26 +221,32 @@ def update_article_summary_fields(
 ) -> None:
     """Persist summary + status after lazy generation on a page request."""
     now = datetime.now(timezone.utc).isoformat()
-    with get_connection() as conn:
+    engine = get_engine()
+    with engine.begin() as conn:
         conn.execute(
-            """
-            UPDATE news
-            SET summary = ?, summary_status = ?, last_updated_at = ?
-            WHERE id = ?
-            """,
-            (summary, summary_status, now, article_id),
+            text(
+                """
+                UPDATE news
+                SET summary = :summary, summary_status = :summary_status, last_updated_at = :lu
+                WHERE id = :id
+                """
+            ),
+            {
+                "summary": summary,
+                "summary_status": summary_status,
+                "lu": now,
+                "id": article_id,
+            },
         )
-        conn.commit()
 
 
 def _json_list_for_db(value: Any) -> Optional[str]:
-    """Turn a Python list (or None) into a JSON string for SQLite TEXT."""
+    """Turn a Python list (or None) into a JSON string for TEXT columns."""
     if value is None:
         return None
     if isinstance(value, list):
         return json.dumps(value)
     if isinstance(value, str):
-        # Already stored JSON from elsewhere
         try:
             json.loads(value)
             return value
@@ -210,7 +267,7 @@ def _list_from_db(json_text: Optional[str]) -> List:
 
 
 def _article_row_for_insert(a: Dict) -> Dict:
-    """Build a flat dict matching ARTICLE_COLUMNS for executemany."""
+    """Build a flat dict matching ARTICLE_COLUMNS for bulk insert."""
     cid = a.get("cluster_id")
     rs = a.get("rank_score")
     return {
@@ -236,8 +293,8 @@ def _article_row_for_insert(a: Dict) -> Dict:
     }
 
 
-def _article_from_row(row: sqlite3.Row) -> Dict:
-    """Convert a DB row into an article dict with list fields restored."""
+def _article_from_row(row: Any) -> Dict:
+    """Convert a mapping/row into an article dict with list fields restored."""
     d = dict(row)
     d["sources"] = _list_from_db(d.get("sources"))
     d["related_links"] = _list_from_db(d.get("related_links"))
@@ -263,21 +320,13 @@ def save_articles(articles: List[Dict]) -> None:
             print(f"[db] saved article keys: {sorted(a.keys())}")
         prepared.append(_article_row_for_insert(a))
 
-    cols = ", ".join(ARTICLE_COLUMNS)
-    placeholders = ", ".join(f":{c}" for c in ARTICLE_COLUMNS)
-
-    with get_connection() as conn:
+    engine = get_engine()
+    with engine.begin() as conn:
         print(f"[db] save_articles input_count={len(prepared)}")
-        before = conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
-        conn.executemany(
-            f"""
-            INSERT INTO news ({cols})
-            VALUES ({placeholders})
-            """,
-            prepared,
-        )
-        conn.commit()
-        after = conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
+        before = conn.execute(text("SELECT COUNT(*) FROM news")).scalar_one()
+        # SQLAlchemy 2: list of dicts → bulk insert.
+        conn.execute(insert(news_table), prepared)
+        after = conn.execute(text("SELECT COUNT(*) FROM news")).scalar_one()
         print(f"[db] rows_inserted={after - before}")
 
 
@@ -286,15 +335,18 @@ def get_articles() -> List[Dict]:
     Return all stored articles (admin / legacy). Ordered like the public feed.
     """
     cols = ", ".join(READ_COLUMNS)
-    with get_connection() as conn:
+    engine = get_engine()
+    with engine.connect() as conn:
         rows = conn.execute(
-            f"""
-            SELECT {cols} FROM news
-            ORDER BY COALESCE(rank_score, 0) DESC, id DESC
-            """
-        ).fetchall()
+            text(
+                f"""
+                SELECT {cols} FROM news
+                ORDER BY COALESCE(rank_score, 0) DESC, id DESC
+                """
+            )
+        ).mappings().all()
 
-    result = [_article_from_row(row) for row in rows]
+    result = [_article_from_row(r) for r in rows]
     if result:
         print(f"[db] returned article keys: {sorted(result[0].keys())}")
     print(f"[db] get_articles returned={len(result)}")

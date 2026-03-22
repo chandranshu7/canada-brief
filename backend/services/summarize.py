@@ -12,6 +12,8 @@ from typing import Optional
 
 import requests
 
+from env import get_openai_api_key
+
 # Model selection:
 # - OPENAI_MODEL from environment if set
 # - otherwise default to a lightweight model for short summaries
@@ -29,7 +31,7 @@ def summarize_title(title: str, article_text: Optional[str] = None) -> str:
     - If OPENAI_API_KEY exists, try OpenAI (article_text preferred over title-only).
     - On missing key or any API error, fall back to local summarizer.
     """
-    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    key = get_openai_api_key()
     model = (os.environ.get("OPENAI_MODEL") or _DEFAULT_OPENAI_MODEL).strip()
     _log_verification_header(key_present=bool(key), model=model)
 

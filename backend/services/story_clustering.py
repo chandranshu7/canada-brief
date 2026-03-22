@@ -24,6 +24,7 @@ from typing import Dict, List
 
 import numpy as np
 import requests
+from env import get_openai_api_key
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize as sk_normalize
@@ -133,7 +134,7 @@ def cluster_articles(articles: List[Dict]) -> List[Dict]:
         os.environ.get("CLUSTER_TFIDF_DISTANCE", str(_DEFAULT_TFIDF_DISTANCE))
     )
 
-    if (os.environ.get("OPENAI_API_KEY") or "").strip():
+    if get_openai_api_key():
         try:
             X = _fetch_openai_embeddings(texts)
             labels = _labels_from_vectors(X, embed_threshold)
