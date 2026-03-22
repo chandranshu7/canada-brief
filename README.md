@@ -1,37 +1,50 @@
 # Canada Brief
 
-**Canada Brief** is a portfolio-grade, AI-assisted news aggregator for Canadian and world headlines. It ingests multiple RSS sources, clusters related stories, ranks them, and serves short summaries through a FastAPI API and a Next.js reader UI.
+**Canada Brief** is a minimal, fast news app focused on **Canadian headlines**. It presents **one story at a time**—a calm, readable experience without endless feeds or clutter. The stack is built for clarity and performance: a FastAPI backend, a Next.js reader, and content filtered and ranked for relevance.
+
+## Live demo
+
+**[canada-brief.vercel.app](https://canada-brief.vercel.app/)**
 
 ## Features
 
-- **Multi-source feeds** — Canadian and international RSS sources in one ranked feed  
-- **AI summaries** — Optional OpenAI summaries; automatic local fallback without an API key  
-- **Story clustering** — Groups overlapping coverage (e.g. same event, multiple outlets)  
-- **Pagination** — `GET /news` with `page` / `page_size` (default **5** stories per page, capped server-side)  
-- **Spotlight strip** — Top stories on the home page with a dedicated “More stories” list  
+- **One story at a time** — Full-screen reading, one headline per view; simple **Previous** / **Next** navigation  
+- **Clean UI** — Distraction-free layout built for focus  
+- **Fast API** — **FastAPI** backend with efficient pagination and caching-friendly reads  
+- **Smart ordering** — Stories ranked after ingest so the feed stays coherent  
+- **Lazy summaries** — Summaries generated on demand to keep ingest fast and costs predictable  
+- **Canada-focused** — Ingest and filtering emphasize Canadian sources and topics  
 
 ## Tech stack
 
-| Layer    | Technology                          |
-| -------- | ----------------------------------- |
-| API      | **FastAPI**, **Uvicorn**            |
-| Data     | **SQLite** (file `backend/news.db`) |
-| ML       | **scikit-learn** (clustering)       |
-| Summaries| **OpenAI** (optional) + local rules |
-| UI       | **Next.js 15**, **Tailwind CSS**    |
+| Layer      | Technology                                      |
+| ---------- | ----------------------------------------------- |
+| Frontend   | **Next.js**, **TypeScript**, **Tailwind CSS**   |
+| Backend    | **FastAPI** (Python), **Uvicorn**               |
+| Database   | **PostgreSQL** (production); SQLite optional locally |
+| Clustering | **scikit-learn**                                |
+| Summaries  | **OpenAI** (optional) + fast local fallback     |
+| Deployment | **Vercel** (frontend), **Render** (backend)     |
+
+## How it works
+
+1. **Fetch** — Canadian RSS feeds are pulled and normalized.  
+2. **Cluster** — Related pieces are grouped so readers see one clear story.  
+3. **Rank** — Stories are scored for feed order.  
+4. **Serve** — The API returns paginated JSON for the app.  
+5. **Summarize lazily** — Full summaries are filled in when stories are viewed, not all at ingest time.  
 
 ## Repository layout
 
 ```
 news_app/
-├── backend/           # FastAPI app, SQLite, RSS ingest, clustering, summarization
+├── backend/           # FastAPI, database, RSS ingest, clustering, summaries
 │   ├── main.py
 │   ├── database.py
 │   ├── requirements.txt
 │   └── services/
 ├── frontend/          # Next.js app
 ├── README.md
-├── package.json       # npm run dev → frontend
 └── .gitignore
 ```
 
@@ -40,26 +53,25 @@ news_app/
 - **Python 3.10+**
 - **Node.js 18+**
 
-## Backend
+## Backend (local)
 
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env               # optional: add OPENAI_API_KEY
+cp .env.example .env               # optional: DATABASE_URL, OPENAI_API_KEY
 uvicorn main:app --reload --port 8000
 ```
 
 - API: <http://localhost:8000>  
 - Docs: <http://localhost:8000/docs>  
 - `GET /health` — health check  
-- `GET /news` — JSON `{ "articles": [...], "top_stories": [...] }` + header `X-Total-Count`  
-- `GET /news?refresh=true` — re-fetch RSS and rebuild the database  
+- `GET /news` — JSON feed with articles and pagination metadata  
 
-Each article in JSON includes: `id`, `title`, `summary`, `source`, `link`, `published`, `category`, `region`, `image_url`, plus `sources`, `related_links`, and `cluster_id` when clustered.
+Set `DATABASE_URL` for PostgreSQL; otherwise the app can use a local SQLite file for development.
 
-## Frontend
+## Frontend (local)
 
 From the **repository root**:
 
@@ -68,7 +80,7 @@ npm install --prefix frontend
 npm run dev
 ```
 
-Open <http://localhost:3000>. Set `NEXT_PUBLIC_API_URL` if the API is not at `http://localhost:8000`.
+Open <http://localhost:3000>. Point `NEXT_PUBLIC_API_URL` at your API if it is not `http://localhost:8000`.
 
 ## OpenAI (optional)
 
@@ -76,13 +88,13 @@ Open <http://localhost:3000>. Set `NEXT_PUBLIC_API_URL` if the API is not at `ht
 2. Set `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`)  
 3. Restart the backend  
 
-If the key is missing or the API errors, summaries use a fast local fallback.
+If the key is missing or the API errors, summaries use a local fallback.
 
 ## Future improvements
 
-- User accounts and saved articles  
-- Push notifications or email digests  
-- Stronger deduplication and entity linking  
+- Faster initial load  
+- Better story personalization  
+- UI polish and animations  
 - Docker Compose for one-command local runs  
 - Automated tests (API + UI)  
 

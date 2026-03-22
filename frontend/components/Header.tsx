@@ -34,8 +34,8 @@ export function Header() {
             Canada Brief
           </h1>
           <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-slate-600 sm:text-base sm:leading-relaxed">
-            Fast, snackable Canadian headlines — curated for clarity, built for
-            busy readers.
+            Canadian news only — quick, clear reads for busy readers from trusted
+            national and regional sources.
           </p>
         </div>
       </div>

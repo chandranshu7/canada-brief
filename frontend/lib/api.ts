@@ -69,10 +69,15 @@ export async function fetchNewsPage(options: {
     params.set("cursor", String(Math.max(0, Math.floor(cursor))));
   }
   if (refresh) params.set("refresh", "true");
+  // Ensure browsers/CDNs never reuse a cached ingest response for explicit refresh.
+  if (refresh) params.set("_t", String(Date.now()));
 
   const url = `${base}/news?${params.toString()}`;
   const res = await fetch(url, {
     cache: "no-store",
+    headers: refresh
+      ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
+      : undefined,
   });
 
   if (!res.ok) {

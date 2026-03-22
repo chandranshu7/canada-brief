@@ -10,7 +10,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import requests
@@ -50,11 +50,7 @@ canadian_feeds: List[Tuple[str, str]] = [
     ("CBC Manitoba", "https://www.cbc.ca/webfeed/rss/rss-canada-manitoba"),
 ]
 
-world_feeds: List[Tuple[str, str]] = [
-    ("BBC", "http://feeds.bbci.co.uk/news/world/rss.xml"),
-    ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
-    ("The Guardian World", "https://www.theguardian.com/world/rss"),
-]
+# International feeds kept out of FEEDS — Canada Brief ingests Canadian sources only.
 
 # Disabled for now: these URLs often time out, return 404/403, or parse to zero entries
 # (blocked bots, paywalls, or layout changes). Re-enable when you verify they work again.
@@ -65,7 +61,7 @@ inactive_feeds: List[Tuple[str, str]] = [
     ("Toronto Star", "https://www.thestar.com/content/thestar/feed.RSSManagerServlet.articles.topstories.rss"),
 ]
 
-FEEDS: List[Tuple[str, str]] = canadian_feeds + world_feeds
+FEEDS: List[Tuple[str, str]] = list(canadian_feeds)
 
 # Backwards compat alias for any code referencing MAX_TOTAL_ARTICLES.
 MAX_TOTAL_ARTICLES = MAX_INGEST_ARTICLES
@@ -582,6 +578,113 @@ def infer_region(title: str, summary: str = "") -> str:
     return "Other"
 
 
+# Regions produced by infer_region() that we treat as Canadian for ingestion.
+CANADIAN_REGIONS = frozenset(
+    {
+        "Canada",
+        "Ottawa",
+        "Ontario",
+        "Quebec",
+        "Alberta",
+        "British Columbia",
+        "Manitoba",
+        "Saskatchewan",
+        "Nova Scotia",
+        "New Brunswick",
+        "Prince Edward Island",
+        "Newfoundland and Labrador",
+        "Yukon",
+        "Northwest Territories",
+        "Nunavut",
+    }
+)
+
+
+# Drop known international outlets even if region was mis-inferred as empty.
+_BLOCKED_FOREIGN_NEWS_HOSTS = (
+    "theguardian.com",
+    "bbc.co.uk",
+    "bbc.com",
+    "reuters.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "cnn.com",
+    "aljazeera.com",
+    "dw.com",
+    "france24.com",
+    "ft.com",
+    "economist.com",
+)
+
+
+def _is_blocked_foreign_news_domain(link: str) -> bool:
+    try:
+        host = (urlparse(link).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    for h in _BLOCKED_FOREIGN_NEWS_HOSTS:
+        if host == h or host.endswith("." + h):
+            return True
+    return False
+
+
+def _canadian_news_domain(link: str) -> bool:
+    """
+    True if the story URL is hosted on a known Canadian news site or .ca domain.
+    Used only when region is empty (not World/Other — those are dropped first).
+    """
+    try:
+        host = (urlparse(link).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    if _is_blocked_foreign_news_domain(link):
+        return False
+    if host.endswith(".ca"):
+        return True
+    # Major Canadian news hosts (not exhaustive; .ca catches most)
+    canadian_hosts = (
+        "cbc.ca",
+        "globalnews.ca",
+        "ctvnews.ca",
+        "thestar.com",
+        "nationalpost.com",
+        "financialpost.com",
+        "torontosun.com",
+        "vancouversun.com",
+        "calgaryherald.com",
+        "leaderpost.com",
+        "montrealgazette.com",
+        "edmontonjournal.com",
+        "ottawacitizen.com",
+    )
+    for suffix in canadian_hosts:
+        if host == suffix or host.endswith("." + suffix):
+            return True
+    return False
+
+
+def is_canadian_article(article: Dict) -> bool:
+    """
+    Canada Brief: keep Canada/province/territory rows, or .ca / known CA hosts
+    when region is empty. Drop World and Other entirely; block obvious foreign URLs.
+    """
+    r = (article.get("region") or "").strip()
+    if r in ("World", "Other"):
+        return False
+    if r in CANADIAN_REGIONS:
+        return True
+    link = (article.get("link") or "").strip()
+    if _is_blocked_foreign_news_domain(link):
+        return False
+    if not r:
+        return _canadian_news_domain(link)
+    return False
+
+
 def normalize_link(link: str) -> str:
     cleaned = (link or "").strip().lower()
     while cleaned.endswith("/") and len(cleaned) > 1:
@@ -837,28 +940,6 @@ def fetch_all_feeds() -> List[Dict]:
             print(f"[fetch_news] {source_name}: skipped due to error: {e}")
             continue
 
-    # If everything failed, try BBC over HTTPS once (common HTTP/redirect issues)
-    if not all_items:
-        print(
-            "[fetch_news] WARNING: no articles yet; emergency BBC HTTPS fallback"
-        )
-        try:
-            r = requests.get(
-                "https://feeds.bbci.co.uk/news/world/rss.xml",
-                timeout=REQUEST_TIMEOUT,
-                headers=HTTP_HEADERS,
-            )
-            r.raise_for_status()
-            all_items.extend(
-                _parse_feed_response(
-                    "BBC",
-                    "https://feeds.bbci.co.uk/news/world/rss.xml",
-                    r.content,
-                )
-            )
-        except Exception as e:
-            print(f"[fetch_news] BBC World (emergency): skipped due to error: {e}")
-
     feed_fetch_s = time.time() - t_feed_start
     print(
         f"[fetch_news] SUCCESSFUL SOURCES:",
@@ -906,7 +987,22 @@ def fetch_all_feeds() -> List[Dict]:
         reverse=True,
     )
 
-    limited = deduped[:MAX_INGEST_ARTICLES]
+    total_after_dedupe = len(deduped)
+    canadian_deduped = [a for a in deduped if is_canadian_article(a)]
+    removed_non_canadian = total_after_dedupe - len(canadian_deduped)
+    sources_kept = sorted(
+        {a.get("source", "") for a in canadian_deduped if a.get("source")}
+    )
+    print(
+        "[fetch_news] canadian_filter: "
+        f"total_fetched_raw={combined_count_before_dedupe} "
+        f"after_dedupe={total_after_dedupe} "
+        f"canadian_kept={len(canadian_deduped)} "
+        f"removed_non_canadian={removed_non_canadian}"
+    )
+    print(f"[fetch_news] sources_kept_after_canadian_filter={sources_kept}")
+
+    limited = canadian_deduped[:MAX_INGEST_ARTICLES]
     dedupe_s = time.time() - t_dedupe_start
 
     t_image_start = time.time()
