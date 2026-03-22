@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /*
+   * Inline SVGs default to inline display; without explicit dimensions they can
+   * expand oddly in some browsers. Icons set h/w in components; this is a safety net.
+   */
+  svg {
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: middle;
+    max-width: 100%;
+  }
+}
+
 :root {
   --foreground: #0f172a;
   --background: #f8fafc;

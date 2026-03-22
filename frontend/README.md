@@ -10,7 +10,7 @@ Next.js UI for the Canada Brief API (`GET /news`).
 ## Setup
 
 ```bash
-cd next-frontend
+cd frontend
 npm install
 cp .env.example .env.local   # optional
 npm run dev
@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Project structure
 
 ```
-next-frontend/
+frontend/
 ├── app/
 │   ├── globals.css      # Tailwind entry
 │   ├── layout.tsx       # Root layout + fonts
@@ -47,8 +47,7 @@ next-frontend/
 │   ├── Filters.tsx      # Category pills + search
 │   ├── Header.tsx
 │   ├── LoadingSkeleton.tsx
-│   ├── NewsFeed.tsx     # Client: fetch, state, layout
-│   └── TopStories.tsx   # First 3 hero cards
+│   └── NewsFeed.tsx     # Client: fetch, state, layout
 ├── lib/
 │   ├── api.ts           # fetch /news
 │   ├── filterArticles.ts

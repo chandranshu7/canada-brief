@@ -162,6 +162,15 @@ def cluster_articles(articles: List[Dict]) -> List[Dict]:
         members = by_cluster[cid]
         print(f"[cluster] cluster_id={cid} size={len(members)}")
 
+    if by_cluster:
+        singletons = sum(1 for m in by_cluster.values() if len(m) == 1)
+        total_c = len(by_cluster)
+        if total_c > 0 and singletons / total_c > 0.95:
+            print(
+                f"[cluster] WARN clustering ineffective: {singletons}/{total_c} "
+                f"clusters are singletons (>95%); consider tuning distance thresholds"
+            )
+
     out: List[Dict] = []
     for cid in sorted(by_cluster.keys()):
         cl = by_cluster[cid]

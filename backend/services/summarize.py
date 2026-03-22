@@ -23,7 +23,7 @@ _SAMPLE_SUMMARY_LOGGED = False
 
 def summarize_title(title: str, article_text: Optional[str] = None) -> str:
     """
-    Return a short summary (1–2 sentences when using OpenAI).
+    Return a readable summary (OpenAI: ~2–4 sentences when article_text is available).
 
     Public function used by the app.
     - If OPENAI_API_KEY exists, try OpenAI (article_text preferred over title-only).
@@ -112,11 +112,13 @@ def _openai_summarize(
         user_block = f"Only this headline is available:\n{t}"
 
     system_msg = (
-        "Summarize this news article in 1-2 short sentences. "
-        "Keep it factual, neutral, and easy to read for a general audience. "
-        "Focus on the key event and the most relevant context. "
-        "Avoid repeating the exact headline wording when possible. "
-        "Do not use bullets, opinions, or sensational language."
+        "Write a clear, factual summary of this news story in 2 to 4 sentences. "
+        "Include the main event, who is involved, and the most important context "
+        "(timing, place, or why it matters) when that information appears in the text. "
+        "Use plain language for a general reader. "
+        "Do not repeat the headline verbatim, add opinions, hype, or filler. "
+        "Do not use bullet points. "
+        "If the source text is thin, still stay within 2–4 sentences without inventing facts."
     )
 
     try:
@@ -132,7 +134,7 @@ def _openai_summarize(
                     {"role": "system", "content": system_msg},
                     {"role": "user", "content": user_block},
                 ],
-                "max_tokens": 150,
+                "max_tokens": 380,
                 "temperature": 0.3,
             },
             timeout=_OPENAI_TIMEOUT,

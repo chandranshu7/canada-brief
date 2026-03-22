@@ -113,6 +113,20 @@ def count_articles() -> int:
     return int(row[0]) if row else 0
 
 
+def count_pending_articles() -> int:
+    """Rows with summary_status pending (not yet successfully summarized)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) FROM news
+            WHERE summary_status IS NULL
+               OR TRIM(COALESCE(summary_status, '')) = ''
+               OR LOWER(TRIM(summary_status)) = 'pending'
+            """
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def get_articles_page(offset: int, limit: int) -> List[Dict]:
     """
     One page of stories ordered for the product feed (rank_score, then id).

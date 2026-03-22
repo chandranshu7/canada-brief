@@ -1,15 +1,15 @@
 /**
- * Distinct, premium badge styles per outlet (light surfaces).
+ * Distinct, light badge styles per outlet (editorial chips).
  */
 export function sourceBadgeClass(source: string | undefined): string {
   const s = (source || "").trim().toLowerCase();
-  if (s.includes("cbc")) return "bg-red-50 text-red-900 ring-red-200/90";
-  if (s.includes("ctv")) return "bg-sky-50 text-sky-900 ring-sky-200/90";
-  if (s.includes("global")) return "bg-slate-100 text-slate-800 ring-slate-300/80";
-  if (s.includes("national post")) return "bg-blue-50 text-blue-900 ring-blue-200/90";
-  if (s.includes("toronto star")) return "bg-indigo-50 text-indigo-900 ring-indigo-200/90";
-  if (s.includes("financial post")) return "bg-amber-50 text-amber-900 ring-amber-200/90";
-  return "bg-zinc-100 text-zinc-800 ring-zinc-200/90";
+  if (s.includes("cbc")) return "bg-red-50/90 text-red-900/95 ring-red-200/50";
+  if (s.includes("ctv")) return "bg-sky-50/90 text-sky-900/95 ring-sky-200/50";
+  if (s.includes("global")) return "bg-slate-50 text-slate-800 ring-slate-200/70";
+  if (s.includes("national post")) return "bg-blue-50/90 text-blue-900/95 ring-blue-200/50";
+  if (s.includes("toronto star")) return "bg-indigo-50/90 text-indigo-900/95 ring-indigo-200/50";
+  if (s.includes("financial post")) return "bg-amber-50/90 text-amber-900/95 ring-amber-200/50";
+  return "bg-zinc-50 text-zinc-800 ring-zinc-200/70";
 }
 
 /**

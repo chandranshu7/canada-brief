@@ -21,8 +21,8 @@ export function Header() {
         aria-hidden
       />
 
-      <div className="relative mx-auto max-w-5xl px-4 pb-12 pt-10 sm:px-6 sm:pb-16 sm:pt-14 lg:px-8">
-        <div className="max-w-2xl animate-fade-in-up opacity-0">
+      <div className="relative mx-auto max-w-5xl px-4 pb-8 pt-8 sm:px-6 sm:pb-10 sm:pt-10 lg:px-8">
+        <div className="max-w-2xl motion-safe:animate-fade-in-up">
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm ring-1 ring-white/80 backdrop-blur-md sm:text-xs">
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-sm">
               <IconRss className="h-3 w-3" />
@@ -30,10 +30,10 @@ export function Header() {
             Live Canadian feed
           </div>
 
-          <h1 className="mt-6 text-[2.125rem] font-semibold leading-[1.08] tracking-tight text-slate-950 sm:text-5xl sm:leading-[1.05]">
+          <h1 className="mt-5 text-[2rem] font-semibold leading-[1.08] tracking-tight text-slate-950 sm:text-[2.65rem] sm:leading-[1.05]">
             Canada Brief
           </h1>
-          <p className="mt-4 max-w-lg text-base leading-relaxed text-slate-600 sm:text-lg sm:leading-relaxed">
+          <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-slate-600 sm:text-base sm:leading-relaxed">
             Fast, snackable Canadian headlines — curated for clarity, built for
             busy readers.
           </p>

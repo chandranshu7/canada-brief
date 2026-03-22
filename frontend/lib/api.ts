@@ -4,7 +4,7 @@ const DEFAULT_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** Must match backend PAGE_SIZE (max rows per page). */
-export const DEFAULT_PAGE_SIZE = 10;
+export const DEFAULT_PAGE_SIZE = 5;
 
 export type FetchNewsPageResult = {
   articles: Article[];
@@ -35,12 +35,19 @@ function parseNewsPayload(data: unknown): { articles: Article[]; topStories?: Ar
 }
 
 /**
- * Load one page of news. Backend may return a JSON array (legacy) or
- * `{ articles, top_stories? }`. Total rows are in `X-Total-Count`.
+ * GET /news?page=&page_size=
+ *
+ * Normal navigation: omit `refresh` (default false). The backend returns one page of
+ * stories and runs LLM summarization only for that page’s rows.
+ *
+ * `refresh: true` re-fetches RSS and re-ingests — use only for explicit “refresh feeds”.
+ *
+ * Response: legacy JSON array or `{ articles, top_stories? }`. Total rows: `X-Total-Count`.
  */
 export async function fetchNewsPage(options: {
   page?: number;
   pageSize?: number;
+  /** When true, adds refresh=true (RSS ingest). Omit for normal pagination. */
   refresh?: boolean;
 }): Promise<FetchNewsPageResult> {
   const page = options.page ?? 1;

@@ -7,7 +7,7 @@
 - **Multi-source feeds** — Canadian and international RSS sources in one ranked feed  
 - **AI summaries** — Optional OpenAI summaries; automatic local fallback without an API key  
 - **Story clustering** — Groups overlapping coverage (e.g. same event, multiple outlets)  
-- **Pagination** — `GET /news` with `page` / `page_size` (capped server-side)  
+- **Pagination** — `GET /news` with `page` / `page_size` (default **5** stories per page, capped server-side)  
 - **Spotlight strip** — Top stories on the home page with a dedicated “More stories” list  
 
 ## Tech stack

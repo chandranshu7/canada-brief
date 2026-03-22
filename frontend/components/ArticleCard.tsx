@@ -88,7 +88,7 @@ export function ArticleCard({ article, index = 0 }: ArticleCardProps) {
             {article.title}
           </h3>
           {article.summary && (
-            <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-600">
+            <p className="mt-2 line-clamp-4 text-sm leading-relaxed text-slate-600">
               {article.summary}
             </p>
           )}

@@ -6,103 +6,72 @@ type FiltersProps = {
   categories: string[];
   activeCategory: string;
   onCategoryChange: (c: string) => void;
-  sources: string[];
-  activeSource: string;
-  onSourceChange: (s: string) => void;
   search: string;
   onSearchChange: (q: string) => void;
 };
 
 const pillBase =
-  "rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-all duration-200 active:scale-[0.98] sm:px-4 sm:py-2 sm:text-[13px]";
+  "rounded-full px-3 py-1 text-[11px] font-medium transition-colors duration-150 active:scale-[0.99] sm:px-3.5 sm:py-1.5 sm:text-xs";
 const pillInactive =
-  "bg-white/90 text-slate-600 ring-1 ring-slate-200/90 hover:bg-slate-50 hover:text-slate-900 hover:ring-slate-300/90";
+  "bg-white text-slate-600 ring-1 ring-slate-200/80 hover:bg-slate-50 hover:text-slate-900";
 const pillActive =
-  "bg-slate-900 text-white shadow-md shadow-slate-900/20 ring-1 ring-slate-900/10";
+  "bg-slate-900 text-white ring-1 ring-slate-900/10 shadow-sm";
 
 export function Filters({
   categories,
   activeCategory,
   onCategoryChange,
-  sources,
-  activeSource,
-  onSourceChange,
   search,
   onSearchChange,
 }: FiltersProps) {
   const catPills = ["All", ...categories];
-  const srcPills = ["All", ...sources];
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Full-width search first — reads clearly and doesn’t fight the pill columns */}
+    <div className="flex flex-col gap-4">
       <div>
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        <label
+          htmlFor="news-search"
+          className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400"
+        >
           Search
-        </p>
+        </label>
         <div className="relative">
-          <label htmlFor="news-search" className="sr-only">
-            Search articles
-          </label>
           <span
-            className="pointer-events-none absolute inset-y-0 left-0 flex w-12 items-center justify-center rounded-l-xl text-slate-400"
+            className="pointer-events-none absolute inset-y-0 left-0 flex w-11 items-center justify-center text-slate-400"
             aria-hidden
           >
-            <IconSearch className="h-[18px] w-[18px] opacity-80" />
+            <IconSearch className="h-[17px] w-[17px] opacity-75" />
           </span>
           <input
             id="news-search"
             type="search"
             autoComplete="off"
-            placeholder="Headlines, topics, keywords…"
+            placeholder="Keywords or topics…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="news-search-input h-12 w-full rounded-xl border border-slate-200/80 bg-slate-50/90 py-3 pl-12 pr-4 text-[15px] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] placeholder:text-slate-400 transition-[border-color,box-shadow,background-color] focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+            className="news-search-input h-11 w-full rounded-lg border border-slate-200/90 bg-white py-2.5 pl-11 pr-3.5 text-[15px] text-slate-900 shadow-sm placeholder:text-slate-400 transition-[border-color,box-shadow] focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900/[0.06]"
           />
         </div>
       </div>
 
-      <div className="space-y-4 border-t border-slate-100 pt-5">
-        <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Topic
-          </p>
-          <div className="flex flex-wrap gap-2 sm:gap-2.5">
-            {catPills.map((cat) => {
-              const active = activeCategory === cat;
-              return (
-                <button
-                  key={`cat-${cat}`}
-                  type="button"
-                  onClick={() => onCategoryChange(cat)}
-                  className={`${pillBase} ${active ? pillActive : pillInactive}`}
-                >
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Source
-          </p>
-          <div className="flex flex-wrap gap-2 sm:gap-2.5">
-            {srcPills.map((src) => {
-              const active = activeSource === src;
-              return (
-                <button
-                  key={`src-${src}`}
-                  type="button"
-                  onClick={() => onSourceChange(src)}
-                  className={`${pillBase} ${active ? pillActive : pillInactive}`}
-                >
-                  {src}
-                </button>
-              );
-            })}
-          </div>
+      <div>
+        <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">
+          Topic
+        </p>
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {catPills.map((cat) => {
+            const active = activeCategory === cat;
+            return (
+              <button
+                key={`cat-${cat}`}
+                type="button"
+                onClick={() => onCategoryChange(cat)}
+                className={`${pillBase} ${active ? pillActive : pillInactive}`}
+              >
+                {cat}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
