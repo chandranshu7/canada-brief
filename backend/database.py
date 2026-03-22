@@ -1,7 +1,7 @@
 """
-database.py — SQLAlchemy + PostgreSQL only (Render / production).
+database.py — SQLAlchemy: PostgreSQL when DATABASE_URL is set (Render), else SQLite (local dev).
 
-DATABASE_URL must be set (no local SQLite). Driver: postgresql+psycopg (psycopg3).
+Driver for Postgres: postgresql+psycopg (psycopg3). SQLite uses the built-in driver.
 
 List-like fields (sources, related_links) are stored as JSON text in TEXT columns.
 """
@@ -9,6 +9,7 @@ List-like fields (sources, related_links) are stored as JSON text in TEXT column
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -26,11 +27,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 
-from env import require_database_url
+from env import get_database_url
 
 # ---------------------------------------------------------------------------
-# Config: DATABASE_URL → PostgreSQL (required)
+# Config: DATABASE_URL → PostgreSQL; otherwise news.db (SQLite)
 # ---------------------------------------------------------------------------
+DB_PATH = "news.db"
 
 # Columns inserted on save (no id — autoincrement / SERIAL).
 # sources / related_links are stored as JSON text (list → string), same as SQLite MVP.
@@ -101,14 +103,22 @@ def _normalize_database_url(raw: str) -> str:
 
 
 def get_engine() -> Engine:
-    """Singleton SQLAlchemy engine from DATABASE_URL (PostgreSQL only)."""
+    """Singleton engine: Postgres from DATABASE_URL, else local SQLite file."""
     global _engine
     if _engine is not None:
         return _engine
 
-    url = _normalize_database_url(require_database_url())
-    # pool_pre_ping: recover from stale connections (common on managed hosts like Render).
-    _engine = create_engine(url, pool_pre_ping=True)
+    raw = get_database_url()
+    if raw:
+        url = _normalize_database_url(raw)
+        # pool_pre_ping: recover from stale connections (common on managed hosts like Render).
+        _engine = create_engine(url, pool_pre_ping=True)
+    else:
+        abs_path = os.path.abspath(DB_PATH)
+        _engine = create_engine(
+            f"sqlite:///{abs_path}",
+            connect_args={"check_same_thread": False},
+        )
     return _engine
 
 

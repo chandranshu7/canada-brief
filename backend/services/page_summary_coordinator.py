@@ -1,8 +1,8 @@
 """
 Per-page summarization coordination: one in-flight LLM batch per API page (1-based).
 
-- Background prewarm and GET /news must not summarize the same page concurrently.
-- Request path may poll briefly after scheduling background work (no synchronous LLM).
+- GET /news request path may poll briefly after scheduling page-level background work.
+- Story-buffer prewarm uses a separate single-flight lock so it never races page work.
 """
 
 from __future__ import annotations
@@ -16,6 +16,10 @@ from database import get_articles_page
 
 _coord_lock = threading.Lock()
 _in_flight_pages: set[int] = set()
+
+# One background story-buffer prewarm at a time (avoids duplicate LLM batches).
+_story_buffer_lock = threading.Lock()
+_in_flight_story_buffer = False
 
 # After the request thread schedules background summarization, poll DB this long for readiness.
 REQUEST_POLL_WAIT_SECONDS = float(os.environ.get("PAGE_SUMMARY_REQUEST_POLL_S", "0.5"))
@@ -42,6 +46,22 @@ def try_acquire_page_summarize(page: int) -> bool:
 def release_page_summarize(page: int) -> None:
     with _coord_lock:
         _in_flight_pages.discard(page)
+
+
+def try_acquire_story_buffer_prewarm() -> bool:
+    """Return True if this worker may run story-buffer prewarm; False if already in flight."""
+    global _in_flight_story_buffer
+    with _story_buffer_lock:
+        if _in_flight_story_buffer:
+            return False
+        _in_flight_story_buffer = True
+        return True
+
+
+def release_story_buffer_prewarm() -> None:
+    global _in_flight_story_buffer
+    with _story_buffer_lock:
+        _in_flight_story_buffer = False
 
 
 def short_wait_for_page_summaries_ready(

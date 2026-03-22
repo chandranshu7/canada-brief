@@ -16,6 +16,8 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
+from services.summarize import normalize_stored_summary
+
 # Feed RSS fetch: keep tight so one slow host does not block the whole refresh.
 REQUEST_TIMEOUT = 5
 
@@ -611,7 +613,11 @@ def _parse_feed_response(
             headline = title or link
             article_text = _entry_text_for_summary(entry)
             # Cheap placeholder; real summary runs after dedupe + top-N cut (see fetch_all_feeds).
-            summary = (headline or "News update.").strip() or "News update."
+            summary = normalize_stored_summary(
+                (headline or "News update.").strip() or "News update.",
+                title,
+                article_text or None,
+            )
             category = infer_category(headline, article_text)
             region = infer_region(headline, article_text)
             # RSS-only images here — article-page scrape is limited to top stories later.

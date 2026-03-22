@@ -47,17 +47,27 @@ function parseNewsPayload(data: unknown): { articles: Article[]; topStories?: Ar
 export async function fetchNewsPage(options: {
   page?: number;
   pageSize?: number;
+  /**
+   * 0-based global index of the current story in feed order (rank_score DESC).
+   * Lets the backend prewarm the next stories for one-story-at-a-time UIs.
+   * Omit to default to the first story on this page: (page-1)*page_size.
+   */
+  cursor?: number;
   /** When true, adds refresh=true (RSS ingest). Omit for normal pagination. */
   refresh?: boolean;
 }): Promise<FetchNewsPageResult> {
   const page = options.page ?? 1;
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const refresh = options.refresh ?? false;
+  const cursor = options.cursor;
 
   const base = DEFAULT_BASE.replace(/\/$/, "");
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", String(pageSize));
+  if (cursor !== undefined && Number.isFinite(cursor)) {
+    params.set("cursor", String(Math.max(0, Math.floor(cursor))));
+  }
   if (refresh) params.set("refresh", "true");
 
   const url = `${base}/news?${params.toString()}`;

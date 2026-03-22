@@ -12,11 +12,10 @@ def get_openai_api_key() -> str:
     return (os.environ.get("OPENAI_API_KEY") or "").strip()
 
 
-def require_database_url() -> str:
-    """PostgreSQL connection URL from DATABASE_URL (required for this app)."""
-    raw = (os.environ.get("DATABASE_URL") or "").strip()
-    if not raw:
-        raise RuntimeError(
-            "DATABASE_URL is required. Set it to your PostgreSQL URL (e.g. on Render)."
-        )
-    return raw
+def get_database_url() -> str:
+    """
+    DATABASE_URL if set (e.g. Render Postgres). Empty string if unset.
+
+    When unset, database.py falls back to local SQLite (news.db) for development.
+    """
+    return (os.environ.get("DATABASE_URL") or "").strip()

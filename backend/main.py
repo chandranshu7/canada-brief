@@ -8,6 +8,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -33,18 +34,20 @@ from services.page_summaries import fill_pending_summaries
 from services.page_summary_coordinator import (
     REQUEST_POLL_WAIT_SECONDS,
     release_page_summarize,
+    release_story_buffer_prewarm,
     short_wait_for_page_summaries_ready,
     try_acquire_page_summarize,
+    try_acquire_story_buffer_prewarm,
 )
 from services.ranking import compute_rank_score, log_rank_debug_top
 from services.story_clustering import cluster_articles
-from services.summarize import quick_fallback_summary
+from services.summarize import clean_summary, normalize_stored_summary, quick_fallback_summary
 
 PAGE_SIZE = 5
 TOP_STORIES_LIMIT = 3
 
-# After serving page N, only prewarm pages N+1 … N+MAX_PREWARM_AHEAD (not beyond).
-MAX_PREWARM_AHEAD = 2
+# Story-buffer prewarm: keep the next N-ranked stories after `cursor` summarized (not full pages).
+STORY_BUFFER_AHEAD = 2
 
 # Public JSON shape for /news (no internal DB-only fields).
 _ARTICLE_PUBLIC_KEYS = (
@@ -64,14 +67,24 @@ _ARTICLE_PUBLIC_KEYS = (
 
 
 def _public_article(row: dict) -> dict:
-    return {k: row.get(k) for k in _ARTICLE_PUBLIC_KEYS}
+    """Public JSON shape; summary always length-normalized (legacy DB rows included)."""
+    d = {k: row.get(k) for k in _ARTICLE_PUBLIC_KEYS}
+    if isinstance(d.get("summary"), str):
+        d["summary"] = clean_summary(d["summary"] or "")
+    return d
 
 
 def _log_startup_config() -> None:
     """Log database backend and whether OPENAI_API_KEY is set (never log secret values)."""
-    print("[startup] database backend: PostgreSQL (SQLAlchemy + psycopg)")
-    db_ok = bool((os.environ.get("DATABASE_URL") or "").strip())
-    print(f"[startup] DATABASE_URL: {'set' if db_ok else 'NOT SET (required)'}")
+    db_url = (os.environ.get("DATABASE_URL") or "").strip()
+    if db_url:
+        print("[startup] database backend: PostgreSQL (SQLAlchemy + psycopg)")
+    else:
+        print(
+            "[startup] database backend: SQLite (local news.db — "
+            "set DATABASE_URL on Render/production)"
+        )
+    print(f"[startup] DATABASE_URL: {'set' if db_url else 'not set (SQLite fallback)'}")
     openai_ok = bool(get_openai_api_key())
     print(f"[startup] OPENAI_API_KEY: {'present' if openai_ok else 'absent'}")
 
@@ -102,7 +115,7 @@ def _ensure_summary_fallback(row: dict) -> None:
     s = (row.get("summary") or "").strip()
     if s:
         return
-    row["summary"] = quick_fallback_summary(row.get("title") or "")
+    row["summary"] = quick_fallback_summary(row.get("title") or "")  # normalized in summarize.py
 
 
 def _pending_rss_or_title_fallback(row: dict) -> None:
@@ -116,7 +129,12 @@ def _pending_rss_or_title_fallback(row: dict) -> None:
     ex = (row.get("rss_excerpt") or "").strip()
     if len(ex) >= 40:
         cut = ex[:1200].strip()
-        row["summary"] = cut + ("..." if len(ex) > 1200 else "")
+        raw = cut + ("..." if len(ex) > 1200 else "")
+        row["summary"] = normalize_stored_summary(
+            raw,
+            row.get("title") or "",
+            (row.get("rss_excerpt") or "").strip() or None,
+        )
         return
     row["summary"] = quick_fallback_summary(row.get("title") or "")
 
@@ -129,123 +147,112 @@ def _count_pending(rows: list) -> int:
     return n
 
 
-def _unique_rows_page_first(page_rows: list, top_rows: list) -> list:
-    """
-    One row per id: all of page 1 first, then top stories not already included.
-    Avoids summarizing the same story twice when top stories overlap page 1.
-    """
-    seen = set()
-    out = []
-    for r in page_rows:
-        rid = r.get("id")
-        if rid is None or rid in seen:
-            continue
-        seen.add(rid)
-        out.append(r)
-    for r in top_rows:
-        rid = r.get("id")
-        if rid is None or rid in seen:
-            continue
-        seen.add(rid)
-        out.append(r)
-    return out
+def _row_pending_llm(row: dict) -> bool:
+    """True if this row still needs an LLM summary (cached ready/failed are skipped)."""
+    return (row.get("summary_status") or "pending").strip().lower() == "pending"
 
 
-def _pregenerate_page1_and_top_stories() -> tuple[int, int, int]:
+def _row_buffer_satisfied(row: dict) -> bool:
+    """True if summary is ready or failed (stored fallback) — counts toward buffer readiness."""
+    return not _row_pending_llm(row)
+
+
+def _max_page_number(total_rows: int, page_size: int) -> int:
+    """Last valid 1-based page index (0 if no rows). Uses ceiling division."""
+    if total_rows <= 0 or page_size <= 0:
+        return 0
+    return (total_rows + page_size - 1) // page_size
+
+
+def _ingest_initial_story_buffer() -> tuple[int, int, int]:
     """
-    LLM-summarize page 1 and top stories only (deduped). Used by background prewarm.
-    Returns (n_ready, n_failed, pending_remaining_in_db).
+    After ingest: warm the first three stories in feed order (rank_score DESC).
+    Matches one-story-at-a-time UX: current + next two in global rank.
     """
-    page_rows = get_articles_page(0, PAGE_SIZE)
-    top_rows = get_articles_top(TOP_STORIES_LIMIT)
-    combined = _unique_rows_page_first(page_rows, top_rows)
-    ready_n, failed_n = fill_pending_summaries(combined, max_count=None)
+    rows = get_articles_page(0, 3)
+    pending = [r for r in rows if _row_pending_llm(r)]
+    if not pending:
+        return 0, 0, count_pending_articles()
+    ready_n, failed_n = fill_pending_summaries(pending, max_count=None)
     pending_left = count_pending_articles()
     return ready_n, failed_n, pending_left
 
 
 def _background_prewarm_worker() -> None:
     """Runs after ingest; does not block HTTP."""
-    print("[prewarm] background started (page1 + top stories, deduped)")
+    print("[story_prewarm] ingest background started (first 3 stories in feed order)")
     t0 = time.time()
     try:
-        pr, pf, pend_left = _pregenerate_page1_and_top_stories()
+        pr, pf, pend_left = _ingest_initial_story_buffer()
         elapsed = time.time() - t0
         print(
-            f"[prewarm] background finished time_s={elapsed:.3f} "
+            f"[story_prewarm] ingest background finished time_s={elapsed:.3f} "
             f"summaries_ready={pr} summaries_failed={pf} pending_remaining={pend_left}"
         )
     except Exception as e:
-        print(f"[prewarm] background failed: {e}")
+        print(f"[story_prewarm] ingest background failed: {e}")
 
 
 def _schedule_prewarm_after_ingest() -> None:
-    """Fire-and-forget thread: fills page-1 + top LLM summaries after DB save."""
+    """Fire-and-forget thread: fills first story-buffer LLM summaries after DB save."""
     t = threading.Thread(target=_background_prewarm_worker, daemon=True)
     t.start()
-    print("[prewarm] background task scheduled (non-blocking)")
+    print("[story_prewarm] ingest background task scheduled (non-blocking)")
 
 
-def _prewarm_page_worker(target_page: int, page_size: int, total_rows: int) -> None:
+def _story_buffer_prewarm_worker(cursor: int, total_rows_hint: int) -> None:
     """
-    Summarize one API page (1-based) in the background.
-    Skips if out of range, nothing pending, or lock not available.
+    Ensure the next STORY_BUFFER_AHEAD stories after `cursor` have summaries (ready or failed).
+    Only fills pending rows; skips cached ready/failed. Single-flight via coordinator.
     """
-    offset = (target_page - 1) * page_size
-    if total_rows <= 0 or offset >= total_rows:
-        print(f"[prewarm] skip page={target_page} reason=exceeds_limit")
+    if not try_acquire_story_buffer_prewarm():
+        print("[story_prewarm] skip reason=in_flight")
         return
-
-    rows = get_articles_page(offset, page_size)
-    if not rows:
-        print(f"[prewarm] skip page={target_page} reason=exceeds_limit")
-        return
-
-    if _count_pending(rows) == 0:
-        print(f"[prewarm] skip page={target_page} reason=already_ready")
-        return
-
-    if not try_acquire_page_summarize(target_page):
-        print(f"[lock] prevented duplicate page={target_page}")
-        print(f"[prewarm] skip page={target_page} reason=in_flight")
-        return
-
-    print(f"[prewarm] started page={target_page}")
-    t0 = time.time()
     try:
-        rows = get_articles_page(offset, page_size)
-        if _count_pending(rows) == 0:
-            print(f"[prewarm] skip page={target_page} reason=already_ready")
+        total_rows = count_articles()
+        cursor = max(0, min(cursor, max(0, total_rows - 1)))
+        if total_rows <= 0:
+            print(f"[story_prewarm] skip cursor={cursor} total_rows=0")
             return
-        n_ready, n_failed = fill_pending_summaries(rows, max_count=None)
-        elapsed = time.time() - t0
+        if cursor + 1 >= total_rows:
+            print(
+                f"[story_prewarm] skip cursor={cursor} no_stories_ahead "
+                f"total_rows={total_rows} (hint was {total_rows_hint})"
+            )
+            return
+
+        ahead = get_articles_page(cursor + 1, STORY_BUFFER_AHEAD)
+        ready_count = sum(1 for r in ahead if _row_buffer_satisfied(r))
+        pending = [r for r in ahead if _row_pending_llm(r)]
+
         print(
-            f"[prewarm] finished page={target_page} "
-            f"summaries_ready={n_ready} summaries_failed={n_failed} time_s={elapsed:.3f}"
+            f"[story_prewarm] cursor={cursor} total_rows={total_rows} "
+            f"ready_ahead_buffer={ready_count}/{len(ahead)} pending_in_buffer={len(pending)}"
+        )
+
+        if not pending:
+            print("[story_prewarm] skip reason=already_ready")
+            return
+
+        n_ready, n_failed = fill_pending_summaries(pending, max_count=len(pending))
+        print(
+            f"[story_prewarm] done cursor={cursor} prewarmed_ready={n_ready} "
+            f"prewarmed_failed={n_failed}"
         )
     except Exception as e:
-        print(f"[prewarm] error page={target_page}: {e}")
+        print(f"[story_prewarm] error: {e}")
     finally:
-        release_page_summarize(target_page)
+        release_story_buffer_prewarm()
 
 
-def _schedule_prewarm_ahead(served_page: int, page_size: int, total_rows: int) -> None:
-    """
-    After serving page `served_page`, only prewarm pages served_page+1 … served_page+MAX_PREWARM_AHEAD.
-    No chaining beyond that (each request schedules at most two targets).
-    """
-    for k in range(1, MAX_PREWARM_AHEAD + 1):
-        target = served_page + k
-        offset = (target - 1) * page_size
-        if offset >= total_rows:
-            print(f"[prewarm] skip page={target} reason=exceeds_limit")
-            continue
-        t = threading.Thread(
-            target=_prewarm_page_worker,
-            args=(target, page_size, total_rows),
-            daemon=True,
-        )
-        t.start()
+def _schedule_story_buffer_prewarm(cursor: int, total_rows: int) -> None:
+    """Fire-and-forget: fill next STORY_BUFFER_AHEAD stories after cursor (global feed index)."""
+    t = threading.Thread(
+        target=_story_buffer_prewarm_worker,
+        args=(cursor, total_rows),
+        daemon=True,
+    )
+    t.start()
 
 
 def _run_page_summaries_background(page: int, offset: int, page_size: int) -> None:
@@ -266,7 +273,7 @@ def _run_page_summaries_background(page: int, offset: int, page_size: int) -> No
 def _run_ingest() -> tuple[int, int, int, float]:
     """
     Refresh pipeline: fetch → dedupe → cluster → rank → save.
-    Does not wait for LLM — page-1 prewarm runs in a background thread.
+    Does not wait for LLM — initial story-buffer prewarm runs in a background thread.
     """
     t0 = time.time()
     raw_items = fetch_all_feeds()
@@ -287,7 +294,7 @@ def _run_ingest() -> tuple[int, int, int, float]:
     ingest_elapsed = time.time() - t0
     print(
         f"[ingest] ingest_complete (fetch+cluster+rank+save) time_s={ingest_elapsed:.3f} "
-        f"(LLM prewarm not included — runs in background)"
+        f"(LLM story-buffer prewarm not included — runs in background)"
     )
     _schedule_prewarm_after_ingest()
     print(
@@ -302,6 +309,7 @@ def get_news(
     refresh: bool = False,
     page: int = 1,
     page_size: int = PAGE_SIZE,
+    cursor: Optional[int] = None,
 ):
     """
     Paginated feed: JSON object with "articles" and "top_stories".
@@ -311,6 +319,10 @@ def get_news(
     Request path never runs LLM synchronously. If another worker holds the page lock,
     responses use RSS/title fallbacks immediately. Otherwise a short DB poll (after
     scheduling background fill) may return ready summaries without blocking on LLM.
+
+    `cursor` is the 0-based global index of the current story in feed order (rank_score DESC).
+    Defaults to the first story on this page: (page-1)*page_size. Used for story-buffer prewarm
+    (next two stories ahead), not full-page prewarm.
     """
     t_start = time.time()
     page = max(1, int(page))
@@ -339,13 +351,21 @@ def get_news(
 
     total = count_articles()
     offset = (page - 1) * page_size
+    if cursor is None:
+        story_cursor = offset
+    else:
+        story_cursor = max(0, int(cursor))
 
     t_read = time.time()
     page_rows = get_articles_page(offset, page_size)
     top_stories = get_articles_top(TOP_STORIES_LIMIT)
     read_elapsed = time.time() - t_read
 
-    n_page = len(page_rows)
+    print(
+        f"[/news] db_page_query total_rows={total} offset={offset} limit={page_size} "
+        f"rows_returned={len(page_rows)} max_allowed_page={_max_page_number(total, page_size)}"
+    )
+
     pending_on_page = _count_pending(page_rows)
     page1_warm_before_lazy = page == 1 and pending_on_page == 0
 
@@ -377,6 +397,12 @@ def get_news(
                 print(f"[request] fallback_used page={page} reason=timeout")
     lazy_elapsed = time.time() - t_lazy
 
+    n_page = len(page_rows)
+    print(
+        f"[/news] page_rows_final total_rows={total} offset={offset} limit={page_size} "
+        f"rows_returned={n_page}"
+    )
+
     for row in top_stories:
         _pending_rss_or_title_fallback(row)
         _ensure_summary_fallback(row)
@@ -395,18 +421,19 @@ def get_news(
     )
     print(
         f"[/news] page={page} page_size_used={page_size} max_page_size={PAGE_SIZE} "
+        f"story_cursor={story_cursor} "
         f"page_articles_loaded={n_page}{warm_flag}{skip_flag} "
         f"pending_on_page_before={pending_on_page} summaries_ready_on_request={n_ready} "
         f"summaries_failed_on_request={n_failed} refresh_mode={refresh_mode}{ingest_flag} "
         f"db_read_s={read_elapsed:.3f} lazy_s={lazy_elapsed:.3f}s request_total_s={total_elapsed:.3f}s "
-        f"(ingest/prewarm threads not included) ingress={n_ingress} saved={n_saved}"
+        f"(ingest/story-buffer threads not included) ingress={n_ingress} saved={n_saved}"
     )
 
     payload = {
         "articles": [_public_article(r) for r in page_rows],
         "top_stories": [_public_article(r) for r in top_stories],
     }
-    _schedule_prewarm_ahead(page, page_size, total)
+    _schedule_story_buffer_prewarm(story_cursor, total)
 
     return JSONResponse(
         content=jsonable_encoder(payload),
