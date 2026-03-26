@@ -8,7 +8,7 @@ import {
   isMultiSourceCluster,
 } from "@/lib/clusterUi";
 import { formatPublishedDisplay } from "@/lib/formatPublished";
-import { getHeroImageDisplay } from "@/lib/heroImage";
+import { getHeroImageDisplay, getVideoThumbnailUrl } from "@/lib/heroImage";
 import { IconBookmark, IconBookmarkFilled } from "./icons";
 import { categoryBadgeClass } from "./categoryStyles";
 import { sourceBadgeClass } from "./sourceStyles";
@@ -52,6 +52,11 @@ export function FeedCard({
   const delayMs = Math.min(index * 35, 280);
   const primarySource = sources[0] ?? (article.source || "").trim();
   const { src: imageSrc } = getHeroImageDisplay(img);
+  
+  // Fallback to video thumbnail if primary image is missing/broken
+  const videoThumbnailUrl = (article.video_url ?? "").trim() ? getVideoThumbnailUrl(article.video_url ?? "") : "";
+  const finalImageSrc = imageSrc || videoThumbnailUrl;
+  
   const placeholderSeed = `${article.title || ""}|${article.link || ""}|${primarySource}`;
   const hue = hashString(placeholderSeed) % 360;
   const placeholderLetter = firstDisplayChar(article.title || primarySource || "News");
@@ -71,10 +76,10 @@ export function FeedCard({
         >
           {/* Edge-to-edge Hero Image */}
           <div className="relative h-64 w-full overflow-hidden bg-[var(--cb-thumb-bg)] sm:h-80">
-            {imageSrc && !imgBroken ? (
+            {finalImageSrc && !imgBroken ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={imageSrc}
+                src={finalImageSrc}
                 alt=""
                 className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 onError={() => setImgBroken(true)}

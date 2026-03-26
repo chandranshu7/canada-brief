@@ -10,6 +10,8 @@ export type Article = {
   topic_category?: string;
   region?: string;
   image_url?: string;
+  /** Video URL if article has embedded video (YouTube, Vimeo, etc.) */
+  video_url?: string;
   cluster_id?: number;
   sources?: string[];
   related_links?: string[];

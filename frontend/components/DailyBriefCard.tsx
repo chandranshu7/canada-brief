@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Article } from "@/lib/types";
 import { fetchDailyBrief, type DailyBriefStory } from "@/lib/api";
 import { formatPublishedDisplay } from "@/lib/formatPublished";
-import { getHeroImageDisplay } from "@/lib/heroImage";
+import { getHeroImageDisplay, getVideoThumbnailUrl } from "@/lib/heroImage";
 import { DailyBriefSkeleton } from "./DailyBriefSkeleton";
 import { categoryBadgeClass } from "./categoryStyles";
 
@@ -23,11 +23,13 @@ function firstDisplayChar(text: string): string {
 
 function BriefStoryImage({
   imageUrl,
+  videoUrl,
   source,
   title,
   storyNumber,
 }: {
   imageUrl?: string;
+  videoUrl?: string;
   source?: string;
   title?: string;
   storyNumber: string;
@@ -35,7 +37,12 @@ function BriefStoryImage({
   const [broken, setBroken] = useState(false);
   const raw = (imageUrl ?? "").trim();
   const { src } = getHeroImageDisplay(raw);
-  const show = Boolean(src) && !broken;
+  
+  // Fallback to video thumbnail if primary image is missing/broken
+  const videoThumbnailUrl = (videoUrl ?? "").trim() ? getVideoThumbnailUrl(videoUrl ?? "") : "";
+  const finalSrc = src || videoThumbnailUrl;
+  
+  const show = Boolean(finalSrc) && !broken;
   const sourceLabel = (source ?? "").trim() || "Canada Brief";
   const seed = `${title || ""}|${sourceLabel}|${storyNumber}`;
   const hue = hashString(seed) % 360;
@@ -47,7 +54,7 @@ function BriefStoryImage({
       {show ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={src}
+          src={finalSrc}
           alt=""
           className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105"
           onError={() => setBroken(true)}
@@ -179,6 +186,7 @@ export function DailyBriefCard({
                 >
                   <BriefStoryImage
                     imageUrl={s.image_url}
+                    videoUrl={s.video_url}
                     source={source}
                     title={s.title}
                     storyNumber={displayNumber}

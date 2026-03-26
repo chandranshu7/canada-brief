@@ -135,6 +135,8 @@ export type DailyBriefStory = {
   category?: string;
   region?: string;
   image_url?: string;
+  /** Video URL if article has embedded video (YouTube, Vimeo, etc.) */
+  video_url?: string;
   link: string;
 };
 

@@ -133,6 +133,7 @@ _ARTICLE_PUBLIC_KEYS = (
     "topic_category",
     "region",
     "image_url",
+    "video_url",
     "sources",
     "related_links",
     "cluster_id",

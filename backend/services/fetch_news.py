@@ -26,6 +26,7 @@ from services.source_registry import (
     registry_stats,
 )
 from services.topic_classification import assign_topic_category
+from services.video_extraction import extract_video_url, get_video_thumbnail_url
 
 # Feed RSS fetch: keep tight so one slow host does not block the whole refresh.
 REQUEST_TIMEOUT = 5
@@ -1097,6 +1098,17 @@ def _parse_feed_response(
             html_fallback_image = _image_from_entry_html(entry) or ""
             image_url = rss_image or ""
 
+            # Extract video URL from entry HTML content (if available)
+            entry_html_content = ""
+            content_items = entry.get("content") or []
+            if isinstance(content_items, list) and len(content_items) > 0:
+                entry_html_content = (content_items[0].get("value") or "").strip()
+            if not entry_html_content:
+                summary_or_desc = (entry.get("summary") or entry.get("description") or "").strip()
+                entry_html_content = BeautifulSoup(summary_or_desc, "html.parser").decode()
+            
+            video_url = extract_video_url(entry_html_content, link) or ""
+
             feed_label = specific_source_label(source_name)
             label = refine_article_source(link, feed_label)
             source_group = infer_source_group(label)
@@ -1120,6 +1132,7 @@ def _parse_feed_response(
                 "coverage_level": (cov.get("coverage_level") or "").strip(),
                 "feed_registry_key": (cov.get("feed_registry_key") or "").strip(),
                 "image_url": image_url,
+                "video_url": video_url,
                 # Used only during ingest if RSS + og:image are empty; stripped before DB save.
                 "_image_html_fallback": html_fallback_image,
                 "published_raw": published_dt,

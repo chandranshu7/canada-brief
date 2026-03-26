@@ -15,6 +15,61 @@ function shouldProxyImageUrl(url: string): boolean {
 }
 
 /**
+ * Extract YouTube video ID from various YouTube URL formats.
+ */
+function extractYoutubeId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/,
+    /youtube\.com\/v\/([a-zA-Z0-9_-]+)/,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract Vimeo video ID from Vimeo URL.
+ */
+function extractVimeoId(url: string): string | null {
+  const match = url.match(/vimeo\.com\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Get thumbnail URL for a video platform URL.
+ * Returns thumbnail URL or empty string if not a recognized video platform.
+ */
+export function getVideoThumbnailUrl(videoUrl: string): string {
+  if (!videoUrl) return "";
+  
+  const u = videoUrl.toLowerCase();
+  
+  // YouTube
+  if (u.includes("youtube.com") || u.includes("youtu.be")) {
+    const videoId = extractYoutubeId(videoUrl);
+    if (videoId) {
+      // hqdefault = high quality (480x360)
+      return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+    }
+  }
+  
+  // Vimeo
+  if (u.includes("vimeo.com")) {
+    const videoId = extractVimeoId(videoUrl);
+    if (videoId) {
+      return `https://i.vimeocdn.com/video/${videoId}.jpg`;
+    }
+  }
+  
+  return "";
+}
+
+/**
  * Heuristic: RSS/CDN URLs that often resolve to small bitmaps.
  * Full-size hero URLs typically avoid these patterns.
  */
