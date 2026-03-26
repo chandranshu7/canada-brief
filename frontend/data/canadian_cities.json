@@ -1,0 +1,1185 @@
+{
+  "version": 1,
+  "cities": [
+    {
+      "city": "Airdrie",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "airdrie-ab",
+      "lat": 51.29,
+      "lon": -114.01,
+      "population_rank": 44,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Calgary",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "calgary-ab",
+      "lat": 51.04,
+      "lon": -114.07,
+      "population_rank": 4,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Edmonton",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "edmonton-ab",
+      "lat": 53.54,
+      "lon": -113.49,
+      "population_rank": 5,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Fort McMurray",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "fort-mcmurray-ab",
+      "lat": 56.73,
+      "lon": -111.38,
+      "population_rank": 41,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Grande Prairie",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "grande-prairie-ab",
+      "lat": 55.17,
+      "lon": -118.79,
+      "population_rank": 43,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Leduc",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "leduc-ab",
+      "lat": 53.26,
+      "lon": -113.55,
+      "population_rank": 46,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Lethbridge",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "lethbridge-ab",
+      "lat": 49.69,
+      "lon": -112.83,
+      "population_rank": 35,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Medicine Hat",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "medicine-hat-ab",
+      "lat": 50.04,
+      "lon": -110.68,
+      "population_rank": 42,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Peace River",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "peace-river-ab",
+      "lat": 56.23,
+      "lon": -117.29,
+      "population_rank": 47,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Red Deer",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "red-deer-ab",
+      "lat": 52.27,
+      "lon": -113.8,
+      "population_rank": 39,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Spruce Grove",
+      "province": "Alberta",
+      "province_code": "AB",
+      "slug": "spruce-grove-ab",
+      "lat": 53.54,
+      "lon": -113.91,
+      "population_rank": 45,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Abbotsford",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "abbotsford-bc",
+      "lat": 49.05,
+      "lon": -122.33,
+      "population_rank": 22,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Campbell River",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "campbell-river-bc",
+      "lat": 50.02,
+      "lon": -125.24,
+      "population_rank": 50,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Courtenay",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "courtenay-bc",
+      "lat": 49.69,
+      "lon": -124.99,
+      "population_rank": 49,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Cranbrook",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "cranbrook-bc",
+      "lat": 49.51,
+      "lon": -115.77,
+      "population_rank": 54,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Kelowna",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "kelowna-bc",
+      "lat": 49.89,
+      "lon": -119.5,
+      "population_rank": 21,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Nanaimo",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "nanaimo-bc",
+      "lat": 49.17,
+      "lon": -123.94,
+      "population_rank": 36,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Penticton",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "penticton-bc",
+      "lat": 49.5,
+      "lon": -119.59,
+      "population_rank": 55,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Prince George",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "prince-george-bc",
+      "lat": 53.92,
+      "lon": -122.75,
+      "population_rank": 48,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Smithers",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "smithers-bc",
+      "lat": 54.78,
+      "lon": -127.17,
+      "population_rank": 53,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Terrace",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "terrace-bc",
+      "lat": 54.52,
+      "lon": -128.6,
+      "population_rank": 52,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Vancouver",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "vancouver-bc",
+      "lat": 49.28,
+      "lon": -123.12,
+      "population_rank": 3,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Vernon",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "vernon-bc",
+      "lat": 50.27,
+      "lon": -119.27,
+      "population_rank": 56,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Victoria",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "victoria-bc",
+      "lat": 48.43,
+      "lon": -123.37,
+      "population_rank": 12,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "White Rock",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "white-rock-bc",
+      "lat": 49.02,
+      "lon": -122.8,
+      "population_rank": 40,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Williams Lake",
+      "province": "British Columbia",
+      "province_code": "BC",
+      "slug": "williams-lake-bc",
+      "lat": 52.14,
+      "lon": -122.14,
+      "population_rank": 51,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Brandon",
+      "province": "Manitoba",
+      "province_code": "MB",
+      "slug": "brandon-mb",
+      "lat": 49.85,
+      "lon": -99.95,
+      "population_rank": 62,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Churchill",
+      "province": "Manitoba",
+      "province_code": "MB",
+      "slug": "churchill-mb",
+      "lat": 58.77,
+      "lon": -94.17,
+      "population_rank": 66,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Steinbach",
+      "province": "Manitoba",
+      "province_code": "MB",
+      "slug": "steinbach-mb",
+      "lat": 49.53,
+      "lon": -96.69,
+      "population_rank": 63,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "The Pas",
+      "province": "Manitoba",
+      "province_code": "MB",
+      "slug": "the-pas-mb",
+      "lat": 53.82,
+      "lon": -101.25,
+      "population_rank": 65,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Thompson",
+      "province": "Manitoba",
+      "province_code": "MB",
+      "slug": "thompson-mb",
+      "lat": 55.74,
+      "lon": -97.86,
+      "population_rank": 64,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Winnipeg",
+      "province": "Manitoba",
+      "province_code": "MB",
+      "slug": "winnipeg-mb",
+      "lat": 49.9,
+      "lon": -97.14,
+      "population_rank": 7,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Bathurst",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "bathurst-nb",
+      "lat": 47.62,
+      "lon": -65.65,
+      "population_rank": 97,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Campbellton",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "campbellton-nb",
+      "lat": 48.01,
+      "lon": -66.67,
+      "population_rank": 100,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Edmundston",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "edmundston-nb",
+      "lat": 47.37,
+      "lon": -68.33,
+      "population_rank": 99,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Fredericton",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "fredericton-nb",
+      "lat": 45.96,
+      "lon": -66.64,
+      "population_rank": 96,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Miramichi",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "miramichi-nb",
+      "lat": 47.03,
+      "lon": -65.5,
+      "population_rank": 98,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Moncton",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "moncton-nb",
+      "lat": 46.09,
+      "lon": -64.78,
+      "population_rank": 31,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Saint John",
+      "province": "New Brunswick",
+      "province_code": "NB",
+      "slug": "saint-john-nb",
+      "lat": 45.27,
+      "lon": -66.08,
+      "population_rank": 30,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Corner Brook",
+      "province": "Newfoundland and Labrador",
+      "province_code": "NL",
+      "slug": "corner-brook-nl",
+      "lat": 48.95,
+      "lon": -57.95,
+      "population_rank": 108,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Gander",
+      "province": "Newfoundland and Labrador",
+      "province_code": "NL",
+      "slug": "gander-nl",
+      "lat": 48.95,
+      "lon": -54.61,
+      "population_rank": 109,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Happy Valley-Goose Bay",
+      "province": "Newfoundland and Labrador",
+      "province_code": "NL",
+      "slug": "happy-valley-goose-bay-nl",
+      "lat": 53.32,
+      "lon": -60.42,
+      "population_rank": 110,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Labrador City",
+      "province": "Newfoundland and Labrador",
+      "province_code": "NL",
+      "slug": "labrador-city-nl",
+      "lat": 52.94,
+      "lon": -66.92,
+      "population_rank": 111,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "St. John's",
+      "province": "Newfoundland and Labrador",
+      "province_code": "NL",
+      "slug": "st-john-s-nl",
+      "lat": 47.56,
+      "lon": -52.71,
+      "population_rank": 34,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Hay River",
+      "province": "Northwest Territories",
+      "province_code": "NT",
+      "slug": "hay-river-nt",
+      "lat": 60.82,
+      "lon": -115.8,
+      "population_rank": 115,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Inuvik",
+      "province": "Northwest Territories",
+      "province_code": "NT",
+      "slug": "inuvik-nt",
+      "lat": 68.36,
+      "lon": -133.71,
+      "population_rank": 116,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Yellowknife",
+      "province": "Northwest Territories",
+      "province_code": "NT",
+      "slug": "yellowknife-nt",
+      "lat": 62.45,
+      "lon": -114.38,
+      "population_rank": 114,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Halifax",
+      "province": "Nova Scotia",
+      "province_code": "NS",
+      "slug": "halifax-ns",
+      "lat": 44.65,
+      "lon": -63.57,
+      "population_rank": 13,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Kentville",
+      "province": "Nova Scotia",
+      "province_code": "NS",
+      "slug": "kentville-ns",
+      "lat": 45.08,
+      "lon": -64.5,
+      "population_rank": 104,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "New Glasgow",
+      "province": "Nova Scotia",
+      "province_code": "NS",
+      "slug": "new-glasgow-ns",
+      "lat": 45.59,
+      "lon": -62.65,
+      "population_rank": 103,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Sydney",
+      "province": "Nova Scotia",
+      "province_code": "NS",
+      "slug": "sydney-ns",
+      "lat": 46.14,
+      "lon": -60.18,
+      "population_rank": 101,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Truro",
+      "province": "Nova Scotia",
+      "province_code": "NS",
+      "slug": "truro-ns",
+      "lat": 45.37,
+      "lon": -63.27,
+      "population_rank": 102,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Yarmouth",
+      "province": "Nova Scotia",
+      "province_code": "NS",
+      "slug": "yarmouth-ns",
+      "lat": 43.84,
+      "lon": -66.12,
+      "population_rank": 105,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Iqaluit",
+      "province": "Nunavut",
+      "province_code": "NU",
+      "slug": "iqaluit-nu",
+      "lat": 63.75,
+      "lon": -68.52,
+      "population_rank": 117,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Rankin Inlet",
+      "province": "Nunavut",
+      "province_code": "NU",
+      "slug": "rankin-inlet-nu",
+      "lat": 62.81,
+      "lon": -92.09,
+      "population_rank": 118,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Barrie",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "barrie-on",
+      "lat": 44.39,
+      "lon": -79.69,
+      "population_rank": 20,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Belleville",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "belleville-on",
+      "lat": 44.16,
+      "lon": -77.38,
+      "population_rank": 81,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Brampton",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "brampton-on",
+      "lat": 43.68,
+      "lon": -79.77,
+      "population_rank": 68,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Brantford",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "brantford-on",
+      "lat": 43.14,
+      "lon": -80.26,
+      "population_rank": 37,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Burlington",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "burlington-on",
+      "lat": 43.33,
+      "lon": -79.8,
+      "population_rank": 73,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Cambridge",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "cambridge-on",
+      "lat": 43.36,
+      "lon": -80.31,
+      "population_rank": 28,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Chatham-Kent",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "chatham-kent-on",
+      "lat": 42.4,
+      "lon": -82.18,
+      "population_rank": 38,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Collingwood",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "collingwood-on",
+      "lat": 44.5,
+      "lon": -80.22,
+      "population_rank": 83,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Cornwall",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "cornwall-on",
+      "lat": 45.02,
+      "lon": -74.73,
+      "population_rank": 80,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Greater Sudbury",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "greater-sudbury-on",
+      "lat": 46.49,
+      "lon": -81.01,
+      "population_rank": 23,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Guelph",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "guelph-on",
+      "lat": 43.54,
+      "lon": -80.25,
+      "population_rank": 27,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Hamilton",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "hamilton-on",
+      "lat": 43.26,
+      "lon": -79.87,
+      "population_rank": 9,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Kenora",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "kenora-on",
+      "lat": 49.77,
+      "lon": -94.49,
+      "population_rank": 85,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Kingston",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "kingston-on",
+      "lat": 44.23,
+      "lon": -76.48,
+      "population_rank": 24,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Kitchener",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "kitchener-on",
+      "lat": 43.45,
+      "lon": -80.49,
+      "population_rank": 10,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "London",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "london-on",
+      "lat": 42.98,
+      "lon": -81.25,
+      "population_rank": 11,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Markham",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "markham-on",
+      "lat": 43.85,
+      "lon": -79.33,
+      "population_rank": 69,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Mississauga",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "mississauga-on",
+      "lat": 43.59,
+      "lon": -79.64,
+      "population_rank": 67,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "North Bay",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "north-bay-on",
+      "lat": 46.31,
+      "lon": -79.46,
+      "population_rank": 77,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Oakville",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "oakville-on",
+      "lat": 43.45,
+      "lon": -79.67,
+      "population_rank": 72,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Orillia",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "orillia-on",
+      "lat": 44.61,
+      "lon": -79.42,
+      "population_rank": 82,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Oshawa",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "oshawa-on",
+      "lat": 43.9,
+      "lon": -78.87,
+      "population_rank": 14,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Ottawa",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "ottawa-on",
+      "lat": 45.42,
+      "lon": -75.7,
+      "population_rank": 6,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Owen Sound",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "owen-sound-on",
+      "lat": 44.57,
+      "lon": -80.94,
+      "population_rank": 84,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Peterborough",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "peterborough-on",
+      "lat": 44.3,
+      "lon": -78.32,
+      "population_rank": 33,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Richmond Hill",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "richmond-hill-on",
+      "lat": 43.88,
+      "lon": -79.44,
+      "population_rank": 71,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Sarnia",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "sarnia-on",
+      "lat": 42.97,
+      "lon": -82.41,
+      "population_rank": 76,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Sault Ste. Marie",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "sault-ste-marie-on",
+      "lat": 46.52,
+      "lon": -84.35,
+      "population_rank": 78,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "St. Catharines",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "st-catharines-on",
+      "lat": 43.16,
+      "lon": -79.25,
+      "population_rank": 19,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "St. Thomas",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "st-thomas-on",
+      "lat": 42.78,
+      "lon": -81.18,
+      "population_rank": 74,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Stratford",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "stratford-on",
+      "lat": 43.37,
+      "lon": -81.0,
+      "population_rank": 75,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Thunder Bay",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "thunder-bay-on",
+      "lat": 48.38,
+      "lon": -89.25,
+      "population_rank": 32,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Timmins",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "timmins-on",
+      "lat": 48.48,
+      "lon": -81.33,
+      "population_rank": 79,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Toronto",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "toronto-on",
+      "lat": 43.65,
+      "lon": -79.38,
+      "population_rank": 1,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Vaughan",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "vaughan-on",
+      "lat": 43.84,
+      "lon": -79.51,
+      "population_rank": 70,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Whitby",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "whitby-on",
+      "lat": 43.9,
+      "lon": -78.94,
+      "population_rank": 29,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Windsor",
+      "province": "Ontario",
+      "province_code": "ON",
+      "slug": "windsor-on",
+      "lat": 42.31,
+      "lon": -83.04,
+      "population_rank": 15,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Charlottetown",
+      "province": "Prince Edward Island",
+      "province_code": "PE",
+      "slug": "charlottetown-pe",
+      "lat": 46.24,
+      "lon": -63.13,
+      "population_rank": 106,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Summerside",
+      "province": "Prince Edward Island",
+      "province_code": "PE",
+      "slug": "summerside-pe",
+      "lat": 46.4,
+      "lon": -63.79,
+      "population_rank": 107,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Drummondville",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "drummondville-qc",
+      "lat": 45.88,
+      "lon": -72.48,
+      "population_rank": 91,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Gatineau",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "gatineau-qc",
+      "lat": 45.48,
+      "lon": -75.7,
+      "population_rank": 86,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Laval",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "laval-qc",
+      "lat": 45.61,
+      "lon": -73.71,
+      "population_rank": 87,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Levis",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "levis-qc",
+      "lat": 46.8,
+      "lon": -71.18,
+      "population_rank": 90,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Longueuil",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "longueuil-qc",
+      "lat": 45.53,
+      "lon": -73.52,
+      "population_rank": 88,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Montreal",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "montreal-qc",
+      "lat": 45.5,
+      "lon": -73.57,
+      "population_rank": 2,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Quebec City",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "quebec-city-qc",
+      "lat": 46.81,
+      "lon": -71.21,
+      "population_rank": 8,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Rimouski",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "rimouski-qc",
+      "lat": 48.45,
+      "lon": -68.52,
+      "population_rank": 92,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Rouyn-Noranda",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "rouyn-noranda-qc",
+      "lat": 48.23,
+      "lon": -79.02,
+      "population_rank": 95,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Saguenay",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "saguenay-qc",
+      "lat": 48.42,
+      "lon": -71.07,
+      "population_rank": 25,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Sept-Iles",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "sept-iles-qc",
+      "lat": 50.2,
+      "lon": -66.38,
+      "population_rank": 93,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Sherbrooke",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "sherbrooke-qc",
+      "lat": 45.4,
+      "lon": -71.9,
+      "population_rank": 18,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Terrebonne",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "terrebonne-qc",
+      "lat": 45.7,
+      "lon": -73.63,
+      "population_rank": 89,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Trois-Rivieres",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "trois-rivieres-qc",
+      "lat": 46.34,
+      "lon": -72.55,
+      "population_rank": 26,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Val-d'Or",
+      "province": "Quebec",
+      "province_code": "QC",
+      "slug": "val-d-or-qc",
+      "lat": 48.1,
+      "lon": -77.8,
+      "population_rank": 94,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Moose Jaw",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "moose-jaw-sk",
+      "lat": 50.39,
+      "lon": -105.55,
+      "population_rank": 57,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "North Battleford",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "north-battleford-sk",
+      "lat": 52.78,
+      "lon": -108.29,
+      "population_rank": 59,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Prince Albert",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "prince-albert-sk",
+      "lat": 53.2,
+      "lon": -105.75,
+      "population_rank": 58,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Regina",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "regina-sk",
+      "lat": 50.45,
+      "lon": -104.62,
+      "population_rank": 17,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Saskatoon",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "saskatoon-sk",
+      "lat": 52.13,
+      "lon": -106.67,
+      "population_rank": 16,
+      "strong_local_coverage": true
+    },
+    {
+      "city": "Swift Current",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "swift-current-sk",
+      "lat": 50.28,
+      "lon": -107.8,
+      "population_rank": 61,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Yorkton",
+      "province": "Saskatchewan",
+      "province_code": "SK",
+      "slug": "yorkton-sk",
+      "lat": 51.21,
+      "lon": -102.46,
+      "population_rank": 60,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Dawson City",
+      "province": "Yukon",
+      "province_code": "YT",
+      "slug": "dawson-city-yt",
+      "lat": 64.06,
+      "lon": -139.43,
+      "population_rank": 113,
+      "strong_local_coverage": false
+    },
+    {
+      "city": "Whitehorse",
+      "province": "Yukon",
+      "province_code": "YT",
+      "slug": "whitehorse-yt",
+      "lat": 60.72,
+      "lon": -135.05,
+      "population_rank": 112,
+      "strong_local_coverage": false
+    }
+  ]
+}

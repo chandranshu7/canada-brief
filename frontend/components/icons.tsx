@@ -62,6 +62,100 @@ export function IconAlert({ className, ...props }: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconHome({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={svgClass(className)}
+      {...props}
+    >
+      <path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z" />
+    </svg>
+  );
+}
+
+export function IconMapPin({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={svgClass(className)}
+      {...props}
+    >
+      <path d="M12 21c-4-3.5-7-7.2-7-11a7 7 0 1 1 14 0c0 3.8-3 7.5-7 11z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
+/** Outline bookmark (unsaved state). */
+export function IconBookmark({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={svgClass(className)}
+      {...props}
+    >
+      <path d="M6 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v17l-6-3-6 3V4z" />
+    </svg>
+  );
+}
+
+/** Filled bookmark (saved state). */
+export function IconBookmarkFilled({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+      aria-hidden
+      className={svgClass(className)}
+      {...props}
+    >
+      <path d="M6 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v17l-6-3-6 3V4z" />
+    </svg>
+  );
+}
+
+export function IconUser({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={svgClass(className)}
+      {...props}
+    >
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20.5c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5" />
+    </svg>
+  );
+}
+
 export function IconSparkle({ className, ...props }: SVGProps<SVGSVGElement>) {
   return (
     <svg

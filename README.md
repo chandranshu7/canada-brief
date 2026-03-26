@@ -28,7 +28,7 @@
 
 ## How it works
 
-1. **Fetch** — Canadian RSS feeds are pulled and normalized.  
+1. **Fetch** — **General** mode ingests **national + major regional** feeds (`source_registry.py`, `include_in_general`) into `news`. **Local** mode ingests **registry-scoped** city → province → national feeds (`get_local_feed_entries_for_scoped` + optional pattern fallback in `local_source_config.py`) into `news_local`, so other cities’ feeds are never mixed in.  
 2. **Cluster** — Related pieces are grouped so readers see one clear story.  
 3. **Rank** — Stories are scored for feed order.  
 4. **Serve** — The API returns paginated JSON for the app.  

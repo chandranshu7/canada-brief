@@ -1,17 +1,21 @@
 export function categoryBadgeClass(category: string | undefined): string {
-  if (!category) return "bg-slate-50 text-slate-700 ring-slate-200/60";
+  if (!category) return "bg-slate-500/15 text-slate-200 ring-slate-300/25";
   const c = category.toLowerCase();
   if (c.includes("politics"))
-    return "bg-red-50/90 text-red-800/95 ring-red-200/50";
-  if (c.includes("crime")) return "bg-blue-50/90 text-blue-800/95 ring-blue-200/50";
+    return "bg-rose-500/18 text-rose-100 ring-rose-300/40";
+  if (c.includes("crime")) return "bg-blue-500/18 text-blue-100 ring-blue-300/40";
   if (c.includes("sports"))
-    return "bg-emerald-50/90 text-emerald-800/95 ring-emerald-200/50";
+    return "bg-emerald-500/18 text-emerald-100 ring-emerald-300/40";
   if (c.includes("business"))
-    return "bg-violet-50/90 text-violet-800/95 ring-violet-200/50";
+    return "bg-violet-500/18 text-violet-100 ring-violet-300/40";
   if (c.includes("health"))
-    return "bg-green-50/90 text-green-800/95 ring-green-200/50";
-  if (c.includes("world")) return "bg-sky-50/90 text-sky-800/95 ring-sky-200/50";
+    return "bg-green-500/18 text-green-100 ring-green-300/40";
+  if (c.includes("technology") || c.includes("tech"))
+    return "bg-cyan-500/18 text-cyan-100 ring-cyan-300/40";
+  if (c.includes("entertainment"))
+    return "bg-fuchsia-500/18 text-fuchsia-100 ring-fuchsia-300/40";
+  if (c.includes("world")) return "bg-sky-500/18 text-sky-100 ring-sky-300/40";
   if (c.includes("canada"))
-    return "bg-orange-50/90 text-orange-800/95 ring-orange-200/50";
-  return "bg-slate-50 text-slate-700 ring-slate-200/60";
+    return "bg-amber-500/18 text-amber-100 ring-amber-300/40";
+  return "bg-slate-500/15 text-slate-200 ring-slate-300/25";
 }

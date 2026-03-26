@@ -11,7 +11,8 @@ export function filterArticles(
   const src = source === "All" ? null : source.trim();
 
   return articles.filter((a) => {
-    if (cat && (a.category ?? "") !== cat) return false;
+    const topic = a.topic_category ?? a.category ?? "";
+    if (cat && topic !== cat) return false;
     if (src) {
       const outlets = a.sources?.length ? a.sources : [a.source];
       if (!outlets.some((x) => (x || "").trim() === src)) return false;
@@ -35,7 +36,8 @@ export function filterArticles(
 export function uniqueCategories(articles: Article[]): string[] {
   const set = new Set<string>();
   for (const a of articles) {
-    if (a.category) set.add(a.category);
+    const t = a.topic_category ?? a.category;
+    if (t) set.add(t);
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }

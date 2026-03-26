@@ -55,18 +55,42 @@ export async function fetchNewsPage(options: {
   cursor?: number;
   /** When true, adds refresh=true (RSS ingest). Omit for normal pagination. */
   refresh?: boolean;
+  /** general = Canada-wide; local = city-first + regional filtering */
+  mode?: "general" | "local";
+  city?: string | null;
+  province?: string | null;
+  /** From Canada locations dataset (e.g. ON). */
+  provinceCode?: string | null;
+  /** Stable slug (e.g. ottawa-on). */
+  locationSlug?: string | null;
+  /** Backend search across title, summary, region, source, categories (sent as `q`). */
+  search?: string | null;
 }): Promise<FetchNewsPageResult> {
   const page = options.page ?? 1;
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const refresh = options.refresh ?? false;
   const cursor = options.cursor;
+  const city = options.city;
+  const province = options.province;
+  const provinceCode = options.provinceCode;
+  const locationSlug = options.locationSlug;
+  const mode = options.mode ?? "general";
+  const search = (options.search ?? "").trim();
 
   const base = DEFAULT_BASE.replace(/\/$/, "");
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("page_size", String(pageSize));
+  params.set("mode", mode);
+  if (search) params.set("q", search);
   if (cursor !== undefined && Number.isFinite(cursor)) {
     params.set("cursor", String(Math.max(0, Math.floor(cursor))));
+  }
+  if (mode === "local") {
+    if (city) params.set("city", city);
+    if (province) params.set("province", province);
+    if (provinceCode) params.set("province_code", provinceCode);
+    if (locationSlug) params.set("slug", locationSlug);
   }
   if (refresh) params.set("refresh", "true");
   // Ensure browsers/CDNs never reuse a cached ingest response for explicit refresh.
@@ -99,4 +123,41 @@ export async function fetchNewsPage(options: {
     page,
     pageSize,
   };
+}
+
+/** GET /daily-brief — top 5 general feed stories (deduped), cached per UTC day on server. */
+export type DailyBriefStory = {
+  id?: number;
+  title: string;
+  summary: string;
+  source: string;
+  published?: string;
+  category?: string;
+  region?: string;
+  image_url?: string;
+  link: string;
+};
+
+export type DailyBriefResponse = {
+  brief_date: string;
+  /** ISO8601 when this payload was built (server UTC). */
+  brief_generated_at?: string;
+  /** Latest `last_updated_at` among selected rows, if any. */
+  brief_source_timestamp?: string | null;
+  brief_max_news_id?: number;
+  estimated_read_time_seconds: number;
+  estimated_read_time_label: string;
+  generation_source: string;
+  stories: DailyBriefStory[];
+};
+
+export async function fetchDailyBrief(
+  apiBase?: string,
+): Promise<DailyBriefResponse> {
+  const base = (apiBase ?? DEFAULT_BASE).replace(/\/$/, "");
+  const res = await fetch(`${base}/daily-brief`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Failed to load Daily Brief (${res.status})`);
+  }
+  return res.json() as Promise<DailyBriefResponse>;
 }

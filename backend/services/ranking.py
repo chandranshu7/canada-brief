@@ -15,8 +15,8 @@ FORMULA (all components ≥ 0, summed into rank_score):
 
   • image — Fixed bonus when `image_url` is set (richer cards / editorial feel).
 
-  • category — Extra points when `category` matches important topics (politics,
-    canada, world, business); only the single best matching boost applies (no stacking).
+  • category — Extra points when `topic_category` / `category` matches important
+    topics (politics, canada, business, etc.); only the single best matching boost applies.
 
 SQLite already orders by rank_score DESC, id DESC — no query change needed.
 """
@@ -31,6 +31,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # --- Tunable weights (keep formula readable) ---------------------------------
 _RECENCY_MAX = 44.0
 _RECENCY_HALF_LIFE_H = 30.0  # hours; ~half weight after this age
+# Extra lift for very fresh items (last ~2h) so /news surfaces breaking Canada stories faster.
+_RECENCY_BOOST_WINDOW_H = 2.0
+_RECENCY_BOOST_EXTRA = 10.0
 
 _COVERAGE_MULT = 3.2
 _COVERAGE_CAP = 14  # max cluster size that still gains linearly (then flat)
@@ -40,12 +43,17 @@ _DIVERSITY_CAP = 9  # max distinct sources counted
 
 _IMAGE_POINTS = 11.0
 
-# Single best category match (substring, lowercased)
+# Single best category match (substring, lowercased). Prefer topic_category when present.
 _CATEGORY_BOOSTS = (
     ("politics", 18.0),
-    ("world", 15.0),
-    ("canada", 13.0),
+    ("canada", 14.0),
     ("business", 11.0),
+    ("crime", 10.0),
+    ("sports", 9.0),
+    ("health", 8.0),
+    ("technology", 8.0),
+    ("entertainment", 6.0),
+    ("world", 4.0),
 )
 
 
@@ -109,18 +117,20 @@ def compute_rank_breakdown(row: Dict[str, Any]) -> Tuple[float, Dict[str, float]
     has_image = 1.0 if (row.get("image_url") or "").strip() else 0.0
     image = has_image * _IMAGE_POINTS
 
-    # Recency
+    # Recency (+ short-window boost for freshness on page 1)
     dt = _parse_published_for_rank(row.get("published"))
     if dt is not None:
         dt = _utc_naive(dt)
         now = datetime.utcnow()
         age_h = max(0.0, (now - dt).total_seconds() / 3600.0)
         recency = _RECENCY_MAX * math.exp(-age_h / _RECENCY_HALF_LIFE_H)
+        if age_h <= _RECENCY_BOOST_WINDOW_H:
+            recency += _RECENCY_BOOST_EXTRA
     else:
         recency = 9.0
 
     # Category: one boost only (strongest match)
-    cat_raw = (row.get("category") or "").lower()
+    cat_raw = (row.get("topic_category") or row.get("category") or "").lower()
     category = 0.0
     for needle, pts in _CATEGORY_BOOSTS:
         if needle in cat_raw:

@@ -2,23 +2,71 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Article } from "@/lib/types";
-import { DEFAULT_PAGE_SIZE, fetchNewsPage } from "@/lib/api";
-import { filterArticles, uniqueCategories } from "@/lib/filterArticles";
-import { rebuildStoryQueue } from "@/lib/storyQueue";
+import { fetchNewsPage } from "@/lib/api";
+import { dedupeFeedArticlesStable } from "@/lib/feedDedupe";
+import { filterArticles, uniqueCategories, uniqueSources } from "@/lib/filterArticles";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { buildStoryLocationContext } from "@/lib/locationContext";
+import type { FeedMode, LocationPreference } from "@/lib/locationPreference";
+import {
+  buildPreferenceKey,
+  DEFAULT_APP_PREFERENCES,
+  EMPTY_LOCATION,
+  loadAppPreferences,
+  resetFeedPreferencesToDefaults,
+  saveAppPreferences,
+} from "@/lib/locationPreference";
+import {
+  clearAllSavedStories,
+  getSavedStories,
+  SAVED_STORIES_STORAGE_KEY,
+  toggleSavedStory,
+} from "@/lib/savedStories";
+import {
+  FOLLOWED_TOPICS_STORAGE_KEY,
+  loadFollowedTopics,
+  matchArticleToFollowedTopics,
+  saveFollowedTopics,
+  toggleFollowTopic,
+  type FollowTopicId,
+} from "@/lib/followedTopics";
+import {
+  PERSONALIZATION_STORAGE_KEY,
+  categoryKeyForArticle,
+  hasPersonalizationSignal,
+  loadPersonalization,
+  recordArticleOpen,
+  recordArticleSaved,
+  recordSearchInterest,
+  savePersonalization,
+  sortByPersonalizedAffinity,
+} from "@/lib/personalization";
 import {
   loadSeenLinks,
   normalizeArticleLink,
   saveSeenLinks,
 } from "@/lib/seenArticles";
-import { Filters } from "./Filters";
-import { Header } from "./Header";
+import { ArticleDetailModal } from "./ArticleDetailModal";
+import { DailyBriefCard } from "./DailyBriefCard";
+import type { BottomNavTab } from "./BottomNav";
+import { BottomNav } from "./BottomNav";
+import { CategoryStrip } from "./CategoryStrip";
+import { FeedCard } from "./FeedCard";
+import { ForYouSection } from "./ForYouSection";
+import { FeedTopBar } from "./FeedTopBar";
+import { LocalSetupCard } from "./LocalSetupCard";
+import { FeedCardSkeleton } from "./FeedCardSkeleton";
+import { FeedEmptyState } from "./FeedEmptyState";
 import { LoadingSkeleton } from "./LoadingSkeleton";
-import { SingleStoryHero } from "./SingleStoryHero";
+import { ProfileScreen } from "./ProfileScreen";
+import { SourceChips } from "./SourceChips";
 
 const API_HINT =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-const QUEUE_LOW_WATER = 3;
+/** Slightly larger pages for scroll feed (backend max applies). */
+const FEED_PAGE_SIZE = 15;
+
 const DEBUG = process.env.NODE_ENV === "development";
 
 function debugFeedState(label: string, payload: Record<string, unknown>) {
@@ -26,84 +74,129 @@ function debugFeedState(label: string, payload: Record<string, unknown>) {
   console.log(`[NewsFeed] ${label}`, payload);
 }
 
-/** Next unseen story in pool after filters (used when advancing without history). */
-function findNextUnseen(
-  pool: Article[],
-  category: string,
-  search: string,
-  nextSeen: Set<string>,
-): Article | null {
-  const rows = filterArticles(pool, category, search, "All");
-  return (
-    rows.find((a) => !nextSeen.has(normalizeArticleLink(a.link || ""))) ?? null
-  );
-}
-
-function mergePoolWithAdded(base: Article[], added: Article[]): Article[] {
-  const keys = new Set(base.map((a) => normalizeArticleLink(a.link || "")));
-  const out = [...base];
-  for (const a of added) {
-    const k = normalizeArticleLink(a.link || "");
-    if (!keys.has(k)) {
-      out.push(a);
-      keys.add(k);
-    }
-  }
-  return out;
-}
-
 export function NewsFeed() {
   const [pool, setPool] = useState<Article[]>([]);
   const [totalRows, setTotalRows] = useState(0);
-  /** True only while the initial GET /news (page 1) is in flight. */
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [category, setCategory] = useState("All");
   const [search, setSearch] = useState("");
+  /** Debounced for API `q` — backend search across full dataset (general or local). */
+  const debouncedSearch = useDebouncedValue(search, 350);
+  const [sourceFilter, setSourceFilter] = useState("All");
 
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [seenReady, setSeenReady] = useState(false);
 
-  /**
-   * Ordered list of stories visited in this session (normal mode).
-   * Not the unseen queue — we keep full Article snapshots so Previous can revisit
-   * after items leave the unseen list (marked seen).
-   */
-  const [viewHistory, setViewHistory] = useState<Article[]>([]);
-  /** Index into viewHistory for the story currently shown. */
-  const [sessionIndex, setSessionIndex] = useState(0);
-
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  const [nextBusy, setNextBusy] = useState(false);
-  const nextBusyRef = useRef(false);
+  const [feedMode, setFeedMode] = useState<FeedMode>(
+    DEFAULT_APP_PREFERENCES.feedMode,
+  );
+  const [locationPref, setLocationPref] = useState<LocationPreference>(
+    DEFAULT_APP_PREFERENCES.location,
+  );
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
 
-  const pageSize = DEFAULT_PAGE_SIZE;
+  const [navTab, setNavTab] = useState<BottomNavTab>("home");
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  /** Bumps when bookmarks change so lists re-render from localStorage. */
+  const [savedRev, setSavedRev] = useState(0);
+  const [savedBookmarks, setSavedBookmarks] = useState<Article[]>([]);
+
+  const [followedTopics, setFollowedTopics] = useState<FollowTopicId[]>([]);
+  const [topicsHydrated, setTopicsHydrated] = useState(false);
+
+  /** Category affinity from opens / saves / search (localStorage). */
+  const [categoryAffinity, setCategoryAffinity] = useState<
+    Record<string, number>
+  >({});
+  const [affinityHydrated, setAffinityHydrated] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const loadSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const pageSize = FEED_PAGE_SIZE;
   const nextPageRef = useRef(2);
-  /** Latest filters for buffer seeding after fetch (avoid loadInitial deps that retrigger mount effect). */
-  const categoryRef = useRef(category);
-  const searchRef = useRef(search);
-  /** Link to preserve when filters change (set before category/search updates). */
-  const pendingPreserveLinkRef = useRef<string | null>(null);
-  /** Skip first filter effect runs (initial load already seeded via loadInitial). */
-  const filterCategoryPrimedRef = useRef(false);
-  const filterSearchPrimedRef = useRef(false);
 
   const poolRef = useRef(pool);
   const seenRef = useRef(seen);
-  /** Coalesce concurrent loadMore (effect + Next button) onto one fetch. */
+  const locationPrefRef = useRef(locationPref);
+  const feedModeRef = useRef(feedMode);
   const loadMoreInFlightRef = useRef<Promise<Article[]> | null>(null);
+
   useEffect(() => {
     poolRef.current = pool;
     seenRef.current = seen;
-  }, [pool, seen]);
+    locationPrefRef.current = locationPref;
+    feedModeRef.current = feedMode;
+  }, [pool, seen, locationPref, feedMode]);
 
   useEffect(() => {
-    categoryRef.current = category;
-    searchRef.current = search;
-  }, [category, search]);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === SAVED_STORIES_STORAGE_KEY) setSavedRev((n) => n + 1);
+      if (e.key === FOLLOWED_TOPICS_STORAGE_KEY) {
+        setFollowedTopics(loadFollowedTopics());
+      }
+      if (e.key === PERSONALIZATION_STORAGE_KEY) {
+        setCategoryAffinity(loadPersonalization());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    setFollowedTopics(loadFollowedTopics());
+    setTopicsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    setCategoryAffinity(loadPersonalization());
+    setAffinityHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!topicsHydrated) return;
+    saveFollowedTopics(followedTopics);
+    if (DEBUG) {
+      console.log("[topic_follow] followed_topics", followedTopics);
+    }
+  }, [followedTopics, topicsHydrated]);
+
+  useEffect(() => {
+    if (!affinityHydrated) return;
+    savePersonalization(categoryAffinity);
+    if (DEBUG && hasPersonalizationSignal(categoryAffinity)) {
+      console.log("[personalize] category_weights", categoryAffinity);
+    }
+  }, [categoryAffinity, affinityHydrated]);
+
+  useEffect(() => {
+    const p = loadAppPreferences();
+    setFeedMode(p.feedMode);
+    setLocationPref(p.location);
+    setNavTab(p.feedMode === "local" ? "local" : "home");
+    setPrefsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    saveAppPreferences({ feedMode, location: locationPref });
+  }, [feedMode, locationPref, prefsHydrated]);
+
+  useEffect(() => {
+    setSavedBookmarks(getSavedStories());
+  }, [savedRev]);
+
+  const prefKey = useMemo(
+    () => buildPreferenceKey({ feedMode, location: locationPref }),
+    [feedMode, locationPref],
+  );
+
+  const hasLocalLocation = Boolean(locationPref.city && locationPref.province);
 
   const lastPage = Math.max(1, Math.ceil(totalRows / pageSize) || 1);
 
@@ -116,28 +209,40 @@ export function NewsFeed() {
     setInitialLoading(true);
     setError(null);
     try {
+      const mode = feedModeRef.current;
+      const loc = locationPrefRef.current;
+      if (mode === "local" && (!loc.city || !loc.province)) {
+        setPool([]);
+        setTotalRows(0);
+        debugFeedState("local mode — awaiting location", {});
+        return;
+      }
+
+      const q = debouncedSearch.trim();
       const result = await fetchNewsPage({
         page: 1,
         pageSize,
         refresh: false,
+        mode: mode === "local" ? "local" : "general",
+        city: mode === "local" ? loc.city : null,
+        province: mode === "local" ? loc.province : null,
+        provinceCode: mode === "local" ? loc.province_code : null,
+        locationSlug: mode === "local" ? loc.slug : null,
+        search: q || null,
       });
-      setPool(result.articles);
+      const initialDeduped = dedupeFeedArticlesStable(result.articles);
+      if (initialDeduped.removed > 0) {
+        console.warn(
+          `[NewsFeed] feed_dedupe initial removed=${initialDeduped.removed} keys=${initialDeduped.removedKeys.slice(0, 8).join("; ")}`,
+        );
+      }
+      setPool(initialDeduped.items);
       setTotalRows(result.totalCount);
       nextPageRef.current = 2;
 
       const seenSet = loadSeenLinks();
       setSeen(seenSet);
 
-      const queue = rebuildStoryQueue({
-        pool: result.articles,
-        category: categoryRef.current,
-        search: searchRef.current,
-        seen: seenSet,
-        showSeen: false,
-        currentLinkKey: null,
-      });
-      setViewHistory(queue.viewHistory);
-      setSessionIndex(queue.sessionIndex);
       debugFeedState("initial fetch ok", {
         articles: result.articles.length,
         totalCount: result.totalCount,
@@ -146,18 +251,15 @@ export function NewsFeed() {
       setError(
         e instanceof Error ? e.message : "Something went wrong loading the feed.",
       );
-      setPool([]);
-      setTotalRows(0);
-      setViewHistory([]);
-      setSessionIndex(0);
-      debugFeedState("initial fetch error", {
-        message: e instanceof Error ? e.message : String(e),
-      });
+      if (poolRef.current.length === 0) {
+        setPool([]);
+        setTotalRows(0);
+      }
     } finally {
       setInitialLoading(false);
-      debugFeedState("initial loading cleared", {});
     }
-  }, [pageSize, reloadNonce]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reloadNonce/prefKey force new callback when retry/location changes
+  }, [pageSize, reloadNonce, prefKey, debouncedSearch]);
 
   const loadMore = useCallback(async (): Promise<Article[]> => {
     if (initialLoading) return [];
@@ -171,41 +273,41 @@ export function NewsFeed() {
       setLoadingMore(true);
       try {
         const page = nextPageRef.current;
+        const mode = feedModeRef.current;
+        const loc = locationPrefRef.current;
+        if (mode === "local" && (!loc.city || !loc.province)) {
+          return [];
+        }
+        const q = debouncedSearch.trim();
         const result = await fetchNewsPage({
           page,
           pageSize,
           refresh: false,
+          mode: mode === "local" ? "local" : "general",
+          city: mode === "local" ? loc.city : null,
+          province: mode === "local" ? loc.province : null,
+          provinceCode: mode === "local" ? loc.province_code : null,
+          locationSlug: mode === "local" ? loc.slug : null,
+          search: q || null,
         });
-        const prevPool = poolRef.current;
-        const have = new Set(
-          prevPool.map((a) => normalizeArticleLink(a.link || "")),
-        );
-        const add = result.articles.filter(
-          (a) => !have.has(normalizeArticleLink(a.link || "")),
-        );
-        setPool((prev) => {
-          const have2 = new Set(
-            prev.map((a) => normalizeArticleLink(a.link || "")),
+        const merged = dedupeFeedArticlesStable([
+          ...poolRef.current,
+          ...result.articles,
+        ]);
+        if (merged.removed > 0) {
+          console.warn(
+            `[NewsFeed] feed_dedupe append removed=${merged.removed} keys=${merged.removedKeys.slice(0, 8).join("; ")}`,
           );
-          const add2 = result.articles.filter(
-            (a) => !have2.has(normalizeArticleLink(a.link || "")),
-          );
-          return [...prev, ...add2];
-        });
+        }
+        setPool(merged.items);
         if (result.articles.length === 0) {
           nextPageRef.current = lp + 1;
         } else {
           nextPageRef.current = page + 1;
         }
-        debugFeedState("loadMore ok", {
-          page,
-          added: result.articles.length,
-          nextPageRef: nextPageRef.current,
-        });
-        return add;
+        return merged.items;
       } catch (e) {
         console.error("[NewsFeed] loadMore failed", e);
-        debugFeedState("loadMore error", { error: String(e) });
         return [];
       } finally {
         setLoadingMore(false);
@@ -215,7 +317,7 @@ export function NewsFeed() {
 
     loadMoreInFlightRef.current = promise;
     return promise;
-  }, [initialLoading, totalRows, pageSize]);
+  }, [initialLoading, totalRows, pageSize, debouncedSearch]);
 
   useEffect(() => {
     setSeen(loadSeenLinks());
@@ -223,8 +325,9 @@ export function NewsFeed() {
   }, []);
 
   useEffect(() => {
+    if (!prefsHydrated) return;
     void loadInitial();
-  }, [loadInitial]);
+  }, [loadInitial, prefsHydrated]);
 
   const markSeen = useCallback((link: string) => {
     const key = normalizeArticleLink(link);
@@ -237,459 +340,557 @@ export function NewsFeed() {
     });
   }, []);
 
-  const categories = useMemo(() => uniqueCategories(pool), [pool]);
+  /** Second pass: stable dedupe before render (defensive if state ever contained dupes). */
+  const displayPool = useMemo(() => {
+    const { items, removed, removedKeys } = dedupeFeedArticlesStable(pool);
+    if (removed > 0) {
+      console.warn(
+        `[NewsFeed] feed_dedupe pre-render removed=${removed} keys=${removedKeys.slice(0, 8).join("; ")}`,
+      );
+    }
+    return items;
+  }, [pool]);
+
+  const categories = useMemo(
+    () => uniqueCategories(displayPool),
+    [displayPool],
+  );
+  const sources = useMemo(() => uniqueSources(displayPool), [displayPool]);
+
+  /** When backend search is active, skip client substring filter (avoid double-filtering). */
+  const clientTextQuery = debouncedSearch.trim() ? "" : search.trim();
 
   const filtered = useMemo(
-    () => filterArticles(pool, category, search, "All"),
-    [pool, category, search],
-  );
-
-  const unseenQueue = useMemo(
     () =>
-      filtered.filter((a) => !seen.has(normalizeArticleLink(a.link || ""))),
-    [filtered, seen],
+      filterArticles(displayPool, category, clientTextQuery, sourceFilter),
+    [displayPool, category, clientTextQuery, sourceFilter],
   );
 
-  const current: Article | null = useMemo(() => {
-    if (viewHistory.length === 0) {
-      return unseenQueue[0] ?? null;
-    }
-    if (sessionIndex < 0 || sessionIndex >= viewHistory.length) {
-      return null;
-    }
-    const atEnd = sessionIndex === viewHistory.length - 1;
-    if (atEnd && unseenQueue.length === 0) {
-      return null;
-    }
-    const snapshot = viewHistory[sessionIndex];
-    const linkKey = normalizeArticleLink(snapshot.link || "");
-    const fresh = filtered.find(
-      (a) => normalizeArticleLink(a.link || "") === linkKey,
-    );
-    return fresh ?? snapshot;
-  }, [filtered, viewHistory, sessionIndex, unseenQueue]);
+  /** Same rows as `filtered`, re-ordered by learned category affinity (on-device). */
+  const personalizedFiltered = useMemo(() => {
+    if (!affinityHydrated) return filtered;
+    return sortByPersonalizedAffinity(filtered, categoryAffinity);
+  }, [filtered, categoryAffinity, affinityHydrated]);
 
+  /** Stories in the current filtered feed that match followed topics (deterministic). */
+  const forYouArticles = useMemo(() => {
+    if (followedTopics.length === 0) return [];
+    const scored = personalizedFiltered
+      .map((article, i) => ({
+        article,
+        i,
+        matches: matchArticleToFollowedTopics(article, followedTopics),
+      }))
+      .filter((row) => row.matches.length > 0)
+      .sort((a, b) => {
+        if (b.matches.length !== a.matches.length) {
+          return b.matches.length - a.matches.length;
+        }
+        return a.i - b.i;
+      });
+    return scored.slice(0, 8).map(({ article, matches }) => ({ article, matches }));
+  }, [personalizedFiltered, followedTopics]);
+
+  const categoriesRef = useRef(categories);
+  categoriesRef.current = categories;
+
+  /** Search terms → nudge categories that match label tokens (when query changes). */
   useEffect(() => {
-    if (!seenReady || initialLoading) return;
-    if (loadingMore) return;
-    if (totalRows === 0) return;
-    if (pool.length === 0) return;
-    if (unseenQueue.length >= QUEUE_LOW_WATER) return;
-    if (!canFetchMore) return;
-    void loadMore();
-  }, [
-    seenReady,
-    initialLoading,
-    loadingMore,
-    unseenQueue.length,
-    totalRows,
-    pool.length,
-    canFetchMore,
-    loadMore,
-  ]);
+    if (!affinityHydrated) return;
+    const q = debouncedSearch.trim();
+    if (q.length < 2) return;
+    const cats = categoriesRef.current;
+    if (cats.length === 0) return;
+    setCategoryAffinity((prev) => recordSearchInterest(prev, q, cats));
+  }, [debouncedSearch, affinityHydrated]);
 
   useEffect(() => {
     if (!DEBUG) return;
-    debugFeedState("state snapshot", {
-      initialLoading,
-      loadingMore,
-      seenReady,
-      poolLen: pool.length,
-      totalRows,
-      filteredLen: filtered.length,
-      unseenLen: unseenQueue.length,
-      canFetchMore,
-      hasCurrent: Boolean(current),
-      currentLink: current?.link ?? null,
-      viewHistoryLen: viewHistory.length,
-      sessionIndex,
-    });
-  }, [
-    initialLoading,
-    loadingMore,
-    seenReady,
-    pool.length,
-    totalRows,
-    filtered.length,
-    unseenQueue.length,
-    canFetchMore,
-    current,
-    viewHistory.length,
-    sessionIndex,
-  ]);
-
-  const canFetchMorePages = useCallback(() => {
-    const lp = Math.max(1, Math.ceil(totalRows / pageSize) || 1);
-    return (
-      totalRows > 0 &&
-      nextPageRef.current <= lp &&
-      poolRef.current.length < totalRows
+    if (forYouArticles.length === 0) return;
+    console.log(
+      "[topic_follow] for_you_matches",
+      forYouArticles.map((x) => ({
+        id: x.article.id,
+        link: (x.article.link ?? "").slice(0, 96),
+        topics: x.matches,
+      })),
     );
-  }, [totalRows, pageSize]);
+  }, [forYouArticles]);
 
-  const handleNext = useCallback(async () => {
-    if (!current) return;
-    if (nextBusyRef.current) return;
-    nextBusyRef.current = true;
-    setNextBusy(true);
+  const savedLinkSet = useMemo(() => {
+    return new Set(
+      savedBookmarks.map((a) => normalizeArticleLink(a.link || "")),
+    );
+  }, [savedBookmarks]);
 
-    const beforeLink = current.link ?? "";
-    const beforeId = current.id;
-    let poolSnap = [...poolRef.current];
-    const queueLenBefore = poolSnap.length;
-
-    const logNext = (
-      after: Article | null,
-      poolLenAfter: number,
-      extra?: Record<string, unknown>,
-    ) => {
-      console.log("[NewsFeed] Next story", {
-        before: { id: beforeId, link: beforeLink },
-        after: after
-          ? { id: after.id, link: after.link ?? "" }
-          : null,
-        queueLenBefore,
-        queueLenAfter: poolLenAfter,
-        viewHistoryLen: viewHistory.length,
-        sessionIndexBefore: sessionIndex,
-        ...extra,
-      });
-    };
-
-    try {
-      if (viewHistory.length > 0 && sessionIndex >= viewHistory.length) {
-        return;
-      }
-
-      const nextSeenBase = new Set(seenRef.current);
-      nextSeenBase.add(normalizeArticleLink(current.link || ""));
-
-      const advanceWithFetch = async (): Promise<Article | null> => {
-        let nextArticle = findNextUnseen(
-          poolSnap,
-          category,
-          search,
-          nextSeenBase,
-        );
-        let guard = 0;
-        while (!nextArticle && guard < 12 && canFetchMorePages()) {
-          guard += 1;
-          const added = await loadMore();
-          poolSnap = mergePoolWithAdded(poolSnap, added);
-          nextArticle = findNextUnseen(
-            poolSnap,
-            category,
-            search,
-            nextSeenBase,
-          );
-          if (added.length === 0 && !nextArticle) break;
-        }
-        return nextArticle;
-      };
-
-      // No session history yet: current comes from unseenQueue[0]; Next must advance.
-      if (viewHistory.length === 0) {
-        markSeen(current.link || "");
-        const nextArticle = await advanceWithFetch();
-        logNext(nextArticle, poolSnap.length, { mode: "empty_history" });
-        if (nextArticle) {
-          setViewHistory([nextArticle]);
-          setSessionIndex(0);
-        }
-        return;
-      }
-
-      const atEnd = sessionIndex === viewHistory.length - 1;
-      if (!atEnd) {
-        const nextStory = viewHistory[sessionIndex + 1];
-        markSeen(current.link || "");
-        setSessionIndex((i) => i + 1);
-        logNext(nextStory, poolRef.current.length, { mode: "within_history" });
-        return;
-      }
-
-      markSeen(current.link || "");
-      const nextArticle = await advanceWithFetch();
-      logNext(nextArticle, poolSnap.length, { mode: "append_after_history" });
-      if (nextArticle) {
-        setViewHistory((prev) => [...prev, nextArticle]);
-        setSessionIndex((c) => c + 1);
-      }
-    } finally {
-      nextBusyRef.current = false;
-      setNextBusy(false);
-    }
-  }, [
-    current,
-    viewHistory,
-    sessionIndex,
-    category,
-    search,
-    markSeen,
-    loadMore,
-    canFetchMorePages,
-  ]);
-
-  const handlePrevious = useCallback(() => {
-    if (sessionIndex <= 0) return;
-    const before = viewHistory.length;
-    const nextIdx = sessionIndex - 1;
-    const target = viewHistory[nextIdx];
-    setSessionIndex(nextIdx);
-    if (DEBUG) {
-      console.log("[NewsFeed] Previous", {
-        link: target?.link,
-        historyLenBefore: before,
-        historyLenAfter: before,
-        newIndex: nextIdx,
-      });
-    }
-  }, [sessionIndex, viewHistory]);
-
-  const handleCategoryChange = useCallback(
-    (cat: string) => {
-      pendingPreserveLinkRef.current = current?.link ?? null;
-      setCategory(cat);
-    },
-    [current],
+  const isLinkSaved = useCallback(
+    (link: string) => savedLinkSet.has(normalizeArticleLink(link || "")),
+    [savedLinkSet],
   );
 
-  const handleSearchChange = useCallback(
-    (q: string) => {
-      pendingPreserveLinkRef.current = current?.link ?? null;
-      setSearch(q);
+  const handleToggleSave = useCallback((article: Article) => {
+    const nowSaved = toggleSavedStory(article);
+    if (nowSaved) {
+      setCategoryAffinity((prev) => recordArticleSaved(prev, article));
+      if (DEBUG) {
+        console.log("[personalize] save_boost", {
+          key: categoryKeyForArticle(article),
+          link: (article.link ?? "").slice(0, 96),
+        });
+      }
+    }
+    setSavedRev((n) => n + 1);
+  }, []);
+
+  const handleClearAllSaved = useCallback(() => {
+    if (
+      !window.confirm(
+        "Remove all saved stories from this device? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    clearAllSavedStories();
+    setSavedRev((n) => n + 1);
+  }, []);
+
+  const handleResetFeedPreferences = useCallback(() => {
+    if (
+      !window.confirm(
+        "Reset default feed mode and location to Canada-wide defaults? Your saved bookmarks are kept.",
+      )
+    ) {
+      return;
+    }
+    resetFeedPreferencesToDefaults();
+    const p = loadAppPreferences();
+    setFeedMode(p.feedMode);
+    setLocationPref(p.location);
+  }, []);
+
+  const handleGoToLocalSettings = useCallback(() => {
+    setNavTab("local");
+    setFeedMode("local");
+  }, []);
+
+  const markCategoriesStale = useCallback(() => {
+    setCategory("All");
+    setSourceFilter("All");
+  }, []);
+
+  const handleNav = useCallback(
+    (tab: BottomNavTab) => {
+      setNavTab(tab);
+      if (tab === "home") setFeedMode("general");
+      if (tab === "local") setFeedMode("local");
+      if (tab === "search") {
+        window.setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
     },
-    [current],
+    [],
+  );
+
+  useEffect(() => {
+    if (navTab === "search") {
+      searchInputRef.current?.focus();
+    }
+  }, [navTab]);
+
+  const handleOpenArticle = useCallback(
+    (article: Article) => {
+      markSeen(article.link || "");
+      setCategoryAffinity((prev) => recordArticleOpen(prev, article));
+      if (DEBUG) {
+        console.log("[personalize] open", {
+          key: categoryKeyForArticle(article),
+          link: (article.link ?? "").slice(0, 96),
+        });
+      }
+      setSelectedArticle(article);
+    },
+    [markSeen],
   );
 
   const handleTryAgain = () => {
+    setError(null);
     setReloadNonce((n) => n + 1);
   };
 
-  const feedReady = seenReady && !initialLoading;
+  const handleToggleFollowTopic = useCallback((id: FollowTopicId) => {
+    setFollowedTopics((prev) => toggleFollowTopic(prev, id));
+  }, []);
 
-  /** Topic change: rebuild immediately (preserve current story when still in list). */
-  useEffect(() => {
-    if (!feedReady) return;
-    if (!filterCategoryPrimedRef.current) {
-      filterCategoryPrimedRef.current = true;
-      return;
-    }
-    const raw = pendingPreserveLinkRef.current;
-    pendingPreserveLinkRef.current = null;
-    const key = raw ? normalizeArticleLink(raw) : null;
-    const out = rebuildStoryQueue({
-      pool: poolRef.current,
-      category,
-      search: searchRef.current,
-      seen: seenRef.current,
-      showSeen: false,
-      currentLinkKey: key,
-    });
-    console.log("[NewsFeed] queue rebuilt", {
-      trigger: "category",
-      reason: out.reason,
-      currentLinkKey: key,
-    });
-    setViewHistory(out.viewHistory);
-    setSessionIndex(out.sessionIndex);
-  }, [category, feedReady]);
+  const showFeedSurface =
+    navTab === "home" || navTab === "local" || navTab === "search";
 
-  /** Search typing: debounced rebuild so we don’t reset the queue on every keystroke. */
-  useEffect(() => {
-    if (!feedReady) return;
-    const id = window.setTimeout(() => {
-      if (!filterSearchPrimedRef.current) {
-        filterSearchPrimedRef.current = true;
-        return;
-      }
-      const raw = pendingPreserveLinkRef.current;
-      pendingPreserveLinkRef.current = null;
-      const key = raw ? normalizeArticleLink(raw) : null;
-      const out = rebuildStoryQueue({
-        pool: poolRef.current,
-        category: categoryRef.current,
-        search: searchRef.current,
-        seen: seenRef.current,
-        showSeen: false,
-        currentLinkKey: key,
-      });
-      console.log("[NewsFeed] queue rebuilt", {
-        trigger: "search",
-        reason: out.reason,
-        currentLinkKey: key,
-      });
-      setViewHistory(out.viewHistory);
-      setSessionIndex(out.sessionIndex);
-    }, 320);
-    return () => window.clearTimeout(id);
-  }, [search, feedReady]);
+  const needsLocalSetup = feedMode === "local" && !hasLocalLocation;
 
-  /** No matching rows after filters (distinct from “all seen”). */
+  const showFeedList = showFeedSurface && !needsLocalSetup;
+
+  /** Allow showing the previous feed while a refresh is in flight (no full-screen flash). */
+  const feedReady =
+    seenReady && (!initialLoading || displayPool.length > 0);
+
+  const isFeedRefreshing = initialLoading && displayPool.length > 0;
+  const showInitialSkeleton =
+    initialLoading && displayPool.length === 0 && showFeedList;
+
   const noMatches =
-    feedReady && !error && pool.length > 0 && filtered.length === 0;
+    feedReady && !error && displayPool.length > 0 && filtered.length === 0;
 
-  /** Pool empty from API (no rows at all). */
-  const emptyPool = feedReady && !error && pool.length === 0;
+  const emptyPool =
+    feedReady &&
+    !error &&
+    !initialLoading &&
+    displayPool.length === 0 &&
+    !(feedMode === "local" && !hasLocalLocation);
 
-  /** All items in the current filter are already seen; no unseen left in loaded data. */
-  const noUnseenInPool =
-    feedReady && !error && filtered.length > 0 && unseenQueue.length === 0;
-
-  /** Server has no more pages we haven’t requested (or nothing to paginate). */
   const exhaustedRemote = !canFetchMore || totalRows === 0;
 
-  const showCaughtUp =
-    noUnseenInPool && exhaustedRemote && !loadingMore;
+  /* Infinite scroll */
+  useEffect(() => {
+    const el = loadSentinelRef.current;
+    if (!el || !feedReady || !showFeedList) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const hit = entries[0]?.isIntersecting;
+        if (hit && canFetchMore && !loadingMore && !initialLoading) {
+          void loadMore();
+        }
+      },
+      { root: null, rootMargin: "240px 0px", threshold: 0 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [
+    feedReady,
+    showFeedList,
+    canFetchMore,
+    loadingMore,
+    loadMore,
+    initialLoading,
+  ]);
 
-  /** Still pulling pages hoping to find an unseen story. */
-  const fetchingMoreForUnseen =
-    noUnseenInPool && !exhaustedRemote && (loadingMore || canFetchMore);
+  const locationLineForModal =
+    selectedArticle && feedMode === "local" && hasLocalLocation
+      ? buildStoryLocationContext(selectedArticle.region, locationPref)
+      : null;
 
-  const previousDisabled = sessionIndex <= 0;
+  const desktopTabs: Array<{ id: BottomNavTab; label: string }> = [
+    { id: "home", label: "Home" },
+    { id: "local", label: "Local" },
+    { id: "search", label: "Search" },
+    { id: "saved", label: "Saved" },
+    { id: "profile", label: "Profile" },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50/70 via-white to-slate-50/30">
-      <Header />
+    <div className="min-h-screen pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-10">
+      <FeedTopBar
+        search={search}
+        onSearchChange={setSearch}
+        searchInputRef={searchInputRef}
+        personalized={hasPersonalizationSignal(categoryAffinity)}
+      />
+
+      <div className="mx-auto hidden w-full max-w-6xl px-5 md:block lg:px-8">
+        <nav
+          className="mt-3 mb-2 flex items-center gap-2 rounded-2xl border border-[var(--cb-border)] bg-[var(--cb-surface)] p-1.5 shadow-sm"
+          aria-label="Primary"
+        >
+          {desktopTabs.map((tab) => {
+            const isActive = navTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleNav(tab.id)}
+                aria-current={isActive ? "page" : undefined}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  isActive
+                    ? "bg-[var(--cb-chip-cat-active-bg)] text-[var(--cb-chip-cat-active-text)]"
+                    : "text-[var(--cb-nav-inactive)] hover:bg-[var(--cb-badge-muted-bg)] hover:text-[var(--cb-text)]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
       <main
-        className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-6 lg:px-8"
+        className="cb-shell mx-auto mt-2 w-full max-w-6xl rounded-3xl px-4 pt-4 transition-opacity duration-200 ease-out sm:mt-3 sm:px-5 lg:px-8"
         aria-busy={initialLoading || loadingMore}
       >
-        <div className="mb-6 border-b border-slate-200/50 pb-6">
-          <Filters
-            categories={categories}
-            activeCategory={category}
-            onCategoryChange={handleCategoryChange}
-            search={search}
-            onSearchChange={handleSearchChange}
-          />
-        </div>
+        {showFeedSurface && (
+          <div className="mb-4 space-y-4">
+            {feedMode === "local" && hasLocalLocation && (
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-medium text-[var(--cb-text-secondary)]">
+                  Local ·{" "}
+                  <span className="text-[var(--cb-text)]">
+                    {locationPref.label || locationPref.city}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocationPref(EMPTY_LOCATION);
+                    markCategoriesStale();
+                  }}
+                  className="text-xs font-medium text-[var(--cb-text-tertiary)] underline decoration-[var(--cb-border)] underline-offset-2 hover:text-[var(--cb-text-secondary)]"
+                >
+                  Change area
+                </button>
+              </div>
+            )}
 
-        {/* 1) Initial load — full-page skeleton only here */}
-        {initialLoading && (
+            {needsLocalSetup && (
+              <LocalSetupCard
+                onSelectLocation={(loc) => {
+                  setLocationPref(loc);
+                  markCategoriesStale();
+                }}
+              />
+            )}
+
+            {showFeedList &&
+              navTab === "home" &&
+              feedMode === "general" &&
+              !debouncedSearch.trim() && (
+                <DailyBriefCard
+                  apiBaseUrl={API_HINT.replace(/\/$/, "")}
+                  reloadNonce={reloadNonce}
+                  onArticleOpen={handleOpenArticle}
+                />
+              )}
+
+            {showFeedList &&
+              navTab === "home" &&
+              !debouncedSearch.trim() &&
+              topicsHydrated &&
+              followedTopics.length === 0 && (
+                <p className="rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface)]/70 px-3 py-2.5 text-center text-xs leading-relaxed text-[var(--cb-text-tertiary)]">
+                  Follow topics like AI, jobs, or housing in Profile to personalize
+                  your feed.
+                </p>
+              )}
+
+            {showFeedList &&
+              navTab === "home" &&
+              !debouncedSearch.trim() &&
+              followedTopics.length > 0 &&
+              forYouArticles.length > 0 && (
+                <ForYouSection
+                  items={forYouArticles}
+                  onArticleOpen={handleOpenArticle}
+                  isLinkSaved={isLinkSaved}
+                  onToggleBookmark={handleToggleSave}
+                />
+              )}
+
+            {showFeedList && (
+              <>
+                <CategoryStrip
+                  categories={categories}
+                  active={category}
+                  onChange={setCategory}
+                />
+                <SourceChips
+                  sources={sources}
+                  active={sourceFilter}
+                  onChange={setSourceFilter}
+                />
+              </>
+            )}
+          </div>
+        )}
+
+        {navTab === "saved" && (
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-[var(--cb-text)]">Saved</h2>
+            <p className="mt-1 text-sm text-[var(--cb-text-tertiary)]">
+              Stories you bookmarked on this device.
+            </p>
+          </div>
+        )}
+
+        {navTab === "profile" && (
+          <ProfileScreen
+            feedMode={feedMode}
+            onFeedModeChange={setFeedMode}
+            location={locationPref}
+            onGoToLocalSettings={handleGoToLocalSettings}
+            savedCount={savedBookmarks.length}
+            onClearSaved={handleClearAllSaved}
+            onResetFeedPreferences={handleResetFeedPreferences}
+            apiBaseUrl={API_HINT.replace(/\/$/, "")}
+            followedTopics={followedTopics}
+            onToggleFollowTopic={handleToggleFollowTopic}
+          />
+        )}
+
+        {showFeedList && isFeedRefreshing && (
+          <div
+            className="mb-3 flex items-center justify-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface)]/90 px-3 py-2.5 text-xs font-medium text-[var(--cb-text-secondary)] shadow-sm ring-1 ring-[var(--cb-card-ring)] backdrop-blur-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--cb-text-tertiary)] motion-reduce:animate-none"
+              aria-hidden
+            />
+            Updating feed…
+          </div>
+        )}
+
+        {showInitialSkeleton && (
           <>
             <p className="sr-only" role="status">
-              Loading story
+              Loading feed
             </p>
             <LoadingSkeleton />
           </>
         )}
 
-        {/* 2) Error */}
-        {feedReady && error && (
+        {feedReady && error && displayPool.length === 0 && (
+          <FeedEmptyState
+            variant="error"
+            title="Couldn’t load the feed"
+            description={error}
+            action={{ label: "Try again", onClick: handleTryAgain }}
+          />
+        )}
+
+        {feedReady && error && displayPool.length > 0 && (
           <div
             role="alert"
-            className="mx-auto max-w-lg rounded-2xl border border-red-200/90 bg-red-50/90 px-6 py-10 text-center shadow-sm"
+            className="mb-3 rounded-xl border border-[var(--cb-error-border)] bg-[var(--cb-error-bg)] px-4 py-3 text-left"
           >
-            <p className="text-lg font-semibold text-red-950">
-              We couldn&apos;t load the feed
+            <p className="text-sm font-semibold text-[var(--cb-error-title)]">
+              Couldn&apos;t refresh
             </p>
-            <p className="mt-2 text-sm text-red-900/80">{error}</p>
-            <p className="mt-3 text-xs text-red-800/70">
-              API:{" "}
-              <code className="rounded bg-red-100 px-1.5 py-0.5 font-mono text-[11px]">
-                {API_HINT}
-              </code>
-            </p>
+            <p className="mt-1 text-sm text-[var(--cb-error-body)]">{error}</p>
             <button
               type="button"
               onClick={handleTryAgain}
-              className="mt-6 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white"
+              className="mt-3 text-sm font-semibold text-[var(--cb-error-title)] underline decoration-[var(--cb-error-border)] underline-offset-2 transition hover:opacity-90"
             >
               Try again
             </button>
           </div>
         )}
 
-        {/* 3) Empty API result */}
-        {feedReady && !error && emptyPool && (
-          <p className="text-center text-slate-500">
-            No stories yet. Check back later.
-          </p>
+        {feedReady && !error && emptyPool && showFeedList && (
+          <FeedEmptyState
+            title="No stories yet"
+            description="Check back soon — new headlines will appear when the feed updates."
+            variant="muted"
+          />
         )}
 
-        {/* 4) Filters exclude everything */}
-        {noMatches && (
-          <p className="text-center text-slate-600">
-            Nothing matches your filters. Adjust search or topic.
-          </p>
+        {noMatches && showFeedList && (
+          <FeedEmptyState
+            title="No matches"
+            description="Try another topic, source, or search."
+            variant="muted"
+          />
         )}
 
-        {/* 5) Story card — only when we have a concrete article */}
-        {feedReady && !error && current && !emptyPool && (
-          <div className="space-y-6">
-            <SingleStoryHero article={current} />
-
-            <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 pt-1">
-              <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-                <button
-                  type="button"
-                  onClick={handlePrevious}
-                  disabled={previousDisabled}
-                  className="min-h-[3rem] min-w-[9.5rem] flex-1 rounded-xl border border-slate-200/90 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300 disabled:shadow-none sm:max-w-[11rem] sm:flex-none sm:min-w-[10.5rem]"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleNext()}
-                  disabled={!current || nextBusy}
-                  className="min-h-[3rem] min-w-[9.5rem] flex-1 rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none sm:max-w-[12rem] sm:flex-none sm:min-w-[11rem]"
-                >
-                  Next story
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 6) All caught up (every loaded story seen, no more pages) */}
-        {feedReady && !error && showCaughtUp && !current && (
-          <div className="mx-auto max-w-lg rounded-2xl border border-emerald-200/80 bg-emerald-50/90 px-8 py-10 text-center shadow-sm">
-            <p className="text-xl font-semibold text-emerald-950">
-              You&apos;re all caught up 🎉
-            </p>
-            <p className="mt-3 text-sm leading-relaxed text-emerald-900/85">
-              You&apos;ve seen every story loaded in your feed. New headlines will
-              appear when the feed updates.
-            </p>
-          </div>
-        )}
-
-        {/* 7) Fetching more pages — not initial skeleton */}
         {feedReady &&
-          !error &&
-          fetchingMoreForUnseen &&
-          !current &&
-          !noMatches && (
-            <div className="mx-auto max-w-md rounded-2xl border border-slate-200/80 bg-white/90 px-6 py-8 text-center shadow-sm">
-              <p className="text-sm font-medium text-slate-700">
-                Loading more stories…
-              </p>
-              <p className="mt-2 text-xs text-slate-500">
-                Looking for a story you haven&apos;t read yet.
-              </p>
-            </div>
+          showFeedList &&
+          personalizedFiltered.length > 0 &&
+          (!error || displayPool.length > 0) && (
+            <ul className="flex flex-col gap-8 sm:gap-12 pb-4">
+              {personalizedFiltered.map((article, i) => (
+                <li key={article.id ?? `${article.link}-${i}`}>
+                  <FeedCard
+                    article={article}
+                    index={i}
+                    onOpen={handleOpenArticle}
+                    bookmarked={isLinkSaved(article.link ?? "")}
+                    onToggleBookmark={handleToggleSave}
+                  />
+                </li>
+              ))}
+            </ul>
           )}
 
-        {/* 8) Fallback: feed ready, no card, not covered above */}
-        {feedReady &&
+        {navTab === "saved" && seenReady && !error && (
+          <ul className="flex flex-col gap-8 sm:gap-12 pb-4">
+            {savedBookmarks.length === 0 ? (
+              <FeedEmptyState
+                title="Nothing saved yet"
+                description="Tap the bookmark on any story to save it here."
+                variant="muted"
+              />
+            ) : (
+              savedBookmarks.map((article, i) => (
+                <li
+                  key={
+                    normalizeArticleLink(article.link || "") ||
+                    `saved-${article.saved_at}-${i}`
+                  }
+                >
+                  <FeedCard
+                    article={article}
+                    index={i}
+                    onOpen={handleOpenArticle}
+                    bookmarked
+                    onToggleBookmark={handleToggleSave}
+                  />
+                </li>
+              ))
+            )}
+          </ul>
+        )}
+
+        {showFeedList &&
+          feedReady &&
+          personalizedFiltered.length > 0 &&
+          (!error || displayPool.length > 0) && (
+            <div ref={loadSentinelRef} className="h-8 w-full" aria-hidden />
+          )}
+
+        {showFeedList && loadingMore && personalizedFiltered.length > 0 && (
+          <div className="flex flex-col gap-8 sm:gap-12 pb-6" aria-hidden>
+            <FeedCardSkeleton index={0} />
+            <FeedCardSkeleton index={1} />
+          </div>
+        )}
+
+        {showFeedList &&
+          feedReady &&
+          !loadingMore &&
           !error &&
-          !current &&
-          !emptyPool &&
-          !noMatches &&
-          !showCaughtUp &&
-          !fetchingMoreForUnseen && (
-            <p className="text-center text-sm text-slate-500">
-              No story to show right now.
+          exhaustedRemote &&
+          personalizedFiltered.length > 0 && (
+            <p className="pb-8 text-center text-xs text-[var(--cb-text-muted)]">
+              You&apos;re up to date with loaded stories.
             </p>
           )}
       </main>
 
-      <footer className="border-t border-slate-200/60 bg-white/40 py-8 text-center">
-        <p className="text-xs text-slate-500">© 2026 Canada Brief</p>
-      </footer>
+      <ArticleDetailModal
+        article={selectedArticle}
+        locationLine={locationLineForModal}
+        onClose={() => setSelectedArticle(null)}
+        bookmarked={
+          selectedArticle
+            ? isLinkSaved(selectedArticle.link ?? "")
+            : false
+        }
+        onToggleBookmark={
+          selectedArticle
+            ? () => handleToggleSave(selectedArticle)
+            : undefined
+        }
+      />
+
+      <div className="md:hidden">
+        <BottomNav active={navTab} onChange={handleNav} />
+      </div>
     </div>
   );
 }

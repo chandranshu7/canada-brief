@@ -13,6 +13,8 @@ type SingleStoryHeroProps = {
   article: Article;
   /** First-paint LCP hint for the visible card */
   priority?: boolean;
+  /** Subtle geo line vs your saved area, e.g. "Local to Toronto" or "Ontario" */
+  locationContext?: string | null;
 };
 
 const chipBase =
@@ -24,11 +26,13 @@ const chipBase =
 export function SingleStoryHero({
   article,
   priority = true,
+  locationContext = null,
 }: SingleStoryHeroProps) {
   const img = (article.image_url ?? "").trim();
   const { src: imageSrc, viaProxy } = getHeroImageDisplay(img);
-  const cat = article.category;
+  const cat = article.topic_category ?? article.category;
   const region = (article.region ?? "").trim();
+  const geoChip = (locationContext || region).trim();
   const sources = articleSourceList(article);
   const multi = isMultiSourceCluster(article);
   const nSources = articleSourceCount(article);
@@ -94,11 +98,11 @@ export function SingleStoryHero({
               {cat}
             </span>
           )}
-          {region && (
+          {geoChip && (
             <span
               className={`${chipBase} bg-black/35 text-white/90 ring-white/20 backdrop-blur-sm`}
             >
-              {region}
+              {geoChip}
             </span>
           )}
         </div>

@@ -1,26 +1,26 @@
-/** Single-story loading state — matches one large hero card. */
-export function LoadingSkeleton() {
+import { FeedCardSkeleton } from "./FeedCardSkeleton";
+
+type LoadingSkeletonProps = {
+  /** Number of placeholder cards (default matches first-page feel). */
+  count?: number;
+  withBookmark?: boolean;
+};
+
+/** Full-feed initial load — matches `FeedCard` rows for stable layout. */
+export function LoadingSkeleton({
+  count = 5,
+  withBookmark = true,
+}: LoadingSkeletonProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-5">
-      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/90 shadow-premium ring-1 ring-slate-900/[0.03]">
-        <div
-          className="relative isolate aspect-[21/10] w-full max-w-full overflow-hidden bg-slate-100 sm:aspect-[21/9]"
-          style={{ position: "relative" }}
-        >
-          <div className="absolute inset-0 z-[1] animate-shimmer bg-[linear-gradient(110deg,transparent_40%,rgba(255,255,255,0.5)_50%,transparent_60%)] bg-[length:200%_100%]" />
-        </div>
-        <div className="space-y-4 px-6 py-7 sm:space-y-5 sm:px-9 sm:py-9">
-          <div className="flex flex-wrap gap-1.5">
-            <div className="h-5 w-20 rounded-md bg-slate-100" />
-            <div className="h-5 w-16 rounded-md bg-slate-100" />
-          </div>
-          <div className="h-9 w-full max-w-xl rounded-lg bg-slate-100" />
-          <div className="h-4 w-full max-w-2xl rounded bg-slate-100" />
-          <div className="h-4 w-[92%] max-w-2xl rounded bg-slate-50" />
-          <div className="h-3.5 w-28 rounded bg-slate-50" />
-          <div className="h-11 w-full max-w-xs rounded-lg bg-slate-200/70" />
-        </div>
+    <div className="flex flex-col gap-3 pb-4" role="status" aria-live="polite">
+      <span className="sr-only">Loading stories</span>
+      <div className="mb-1 inline-flex items-center gap-2 self-start rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface)] px-2.5 py-1 text-xs font-medium text-[var(--cb-text-tertiary)]">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--cb-accent)] motion-reduce:animate-none" aria-hidden />
+        Fetching latest stories
       </div>
+      {Array.from({ length: count }, (_, i) => (
+        <FeedCardSkeleton key={i} index={i} withBookmark={withBookmark} />
+      ))}
     </div>
   );
 }

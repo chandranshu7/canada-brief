@@ -1,35 +1,220 @@
 """
 services/summarize.py
 
-Production-safe summarization with two modes:
-1) OpenAI summaries when OPENAI_API_KEY is available
-2) Local fallback summaries when key/API is unavailable
-
-All stored summaries are normalized (2–3 sentences, ≤55 words) and validated for quality.
+Deterministic summaries only (RSS / HTML excerpt / title). No LLM calls.
+Legacy helpers (clean_summary, validate_summary) support older code paths.
 """
 
 import os
 import re
-from typing import List, Optional
+from difflib import SequenceMatcher
+from urllib.parse import urlparse
+from typing import List, Optional, Tuple
 
 import requests
+from bs4 import BeautifulSoup
 
-from env import get_openai_api_key
+_OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+_OPENAI_TIMEOUT_S = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "10"))
+_OPENAI_MODEL = (os.environ.get("OPENAI_MODEL") or "gpt-4.1-mini").strip()
 
-# Model selection:
-# - OPENAI_MODEL from environment if set
-# - otherwise default to a lightweight model for short summaries
-_DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
-_OPENAI_TIMEOUT = 30
-_VERIFICATION_HEADER_LOGGED = False
-_SAMPLE_SUMMARY_LOGGED = False
+
+def _is_google_news_source(source: Optional[str]) -> bool:
+    s = (source or "").strip().lower()
+    return "google news" in s
+
+
+def _extract_publisher_url_from_google_html(html: str) -> str:
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return ""
+    canon = soup.find("link", rel=lambda r: r and "canonical" in str(r).lower())
+    if canon and canon.get("href"):
+        href = (canon.get("href") or "").strip()
+        if href.startswith("http") and "google." not in (urlparse(href).hostname or "").lower():
+            return href
+    for a in soup.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href.startswith("http"):
+            continue
+        host = (urlparse(href).hostname or "").lower()
+        if host and "google." not in host:
+            return href
+    return ""
+
+
+def _resolve_article_url(link: str) -> str:
+    u = (link or "").strip()
+    if not u:
+        return ""
+    try:
+        r = requests.get(u, timeout=min(_OPENAI_TIMEOUT_S, 6.0), allow_redirects=True)
+        r.raise_for_status()
+        final = (r.url or u).strip()
+        host = (urlparse(final).hostname or "").lower()
+        if host and "google." in host:
+            extracted = _extract_publisher_url_from_google_html(r.text)
+            if extracted:
+                return extracted
+        return final
+    except Exception:
+        return u
+
+
+def _fetch_page_description(url: str) -> str:
+    u = (url or "").strip()
+    if not u:
+        return ""
+    try:
+        r = requests.get(u, timeout=min(_OPENAI_TIMEOUT_S, 6.0))
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+    except Exception:
+        return ""
+
+    selectors = [
+        ("meta", {"property": "og:description"}, "content"),
+        ("meta", {"name": "description"}, "content"),
+        ("meta", {"name": "twitter:description"}, "content"),
+    ]
+    for tag_name, attrs, attr_key in selectors:
+        tag = soup.find(tag_name, attrs=attrs)
+        if tag and tag.get(attr_key):
+            txt = re.sub(r"\s+", " ", str(tag.get(attr_key)).strip())
+            if len(txt) >= 60:
+                return txt[:1800]
+
+    p = soup.find("p")
+    if p:
+        txt = re.sub(r"\s+", " ", p.get_text(" ", strip=True))
+        if len(txt) >= 60:
+            return txt[:1800]
+    return ""
+
+
+def _maybe_enrich_excerpt(
+    *,
+    title: str,
+    article_excerpt: Optional[str],
+    article_link: Optional[str],
+    source: Optional[str],
+) -> Optional[str]:
+    ex = (article_excerpt or "").strip()
+    if ex and len(ex) >= 80 and not is_summary_redundant_with_title(ex, title):
+        return ex
+
+    # Google RSS often contains headline + outlet only; try publisher meta description.
+    if _is_google_news_source(source) and article_link:
+        resolved = _resolve_article_url(article_link)
+        desc = _fetch_page_description(resolved)
+        if desc:
+            return desc
+
+    return ex or None
+
+
+def _openai_key() -> str:
+    return (os.environ.get("OPENAI_API_KEY") or "").strip()
+
+
+def _extract_response_text(payload: dict) -> str:
+    txt = (payload.get("output_text") or "").strip()
+    if txt:
+        return txt
+
+    out = payload.get("output")
+    if not isinstance(out, list):
+        return ""
+    chunks: List[str] = []
+    for item in out:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "output_text":
+                t = (block.get("text") or "").strip()
+                if t:
+                    chunks.append(t)
+                    continue
+            text_obj = block.get("text")
+            if isinstance(text_obj, dict):
+                v = (text_obj.get("value") or "").strip()
+                if v:
+                    chunks.append(v)
+    return "\n".join(chunks).strip()
+
+
+def _openai_summarize(title: str, article_excerpt: Optional[str]) -> str:
+    key = _openai_key()
+    if not key:
+        return ""
+
+    excerpt = (article_excerpt or "").strip()
+    prompt_excerpt = excerpt[:5000] if excerpt else ""
+    body = {
+        "model": _OPENAI_MODEL,
+        "temperature": 0.2,
+        "max_output_tokens": 140,
+        "input": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "You summarize Canadian news headlines for a mobile feed. "
+                            "Return plain text only. 2-3 concise sentences, <=55 words, "
+                            "factual, no hype, no bullet points."
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            f"Headline: {title.strip()}\n\n"
+                            f"Article excerpt (may be partial HTML/plain text):\n{prompt_excerpt}"
+                        ),
+                    }
+                ],
+            },
+        ],
+    }
+
+    try:
+        res = requests.post(
+            _OPENAI_RESPONSES_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=_OPENAI_TIMEOUT_S,
+        )
+        if not res.ok:
+            print(
+                f"[summarize] openai request failed status={res.status_code} "
+                f"model={_OPENAI_MODEL!r}"
+            )
+            return ""
+        payload = res.json()
+    except Exception as e:
+        print(f"[summarize] openai request error: {e!r}")
+        return ""
+
+    return _extract_response_text(payload)
 
 # Caps (must match prompts + clean_summary)
 _MAX_SUMMARY_WORDS = 55
 _MAX_SUMMARY_SENTENCES = 3
-# Below this word count we try a stricter OpenAI retry (if excerpt exists).
-_MIN_SUMMARY_WORDS = 20
-
 # Sentences matching these (whole sentence, from the end) are dropped as filler.
 _VAGUE_SENTENCE_RES = [
     re.compile(
@@ -44,6 +229,19 @@ _VAGUE_SENTENCE_RES = [
     re.compile(r"^(.*\bwatch\s+for\s+updates)\s*\.?\s*$", re.I),
     re.compile(r"^(.*\bthis\s+is\s+a\s+developing)\s*\.?\s*$", re.I),
 ]
+
+
+def _normalize_summary_tail(text: str) -> str:
+    """Collapse noisy trailing punctuation (e.g., '.....') to one clean terminal mark."""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    s = s.replace("...", "…")
+    s = re.sub(r"[.]{2,}$", "…", s)
+    s = re.sub(r"[.!?]{2,}$", ".", s)
+    if s[-1] not in ".!?…":
+        s += "."
+    return s
 
 
 def clean_summary(text: str) -> str:
@@ -89,9 +287,7 @@ def clean_summary(text: str) -> str:
     result = re.sub(r"\s+", " ", result).strip()
     if not result:
         return ""
-    if result[-1] not in ".!?":
-        result += "."
-    return result
+    return _normalize_summary_tail(result)
 
 
 def _sentence_is_vague(sentence: str) -> bool:
@@ -226,64 +422,156 @@ def validate_summary(
     if not s.strip() or len(parts) < 2:
         s = _fallback_from_excerpt_or_title(title, article_excerpt)
 
+    # If the model echoed the headline, prefer excerpt-based text for storage.
+    if (
+        article_excerpt
+        and len((article_excerpt or "").strip()) >= 40
+        and is_summary_redundant_with_title(s, title)
+    ):
+        fb = _fallback_from_excerpt_or_title(title, article_excerpt)
+        if fb and not is_summary_redundant_with_title(fb, title):
+            s = fb
+
     return s
-
-
-def _needs_quality_retry(text: str) -> bool:
-    """True if we should try a stricter OpenAI call or excerpt fallback."""
-    s = (text or "").strip()
-    if not s:
-        return True
-    parts = _split_sentences(s)
-    wc = len(s.split())
-    if len(parts) < 2:
-        return True
-    if wc < _MIN_SUMMARY_WORDS:
-        return True
-    return False
 
 
 def normalize_stored_summary(
     text: str, title: str = "", article_excerpt: Optional[str] = None
 ) -> str:
-    """Full pipeline for persisted/displayed summaries (OpenAI, local, RSS)."""
-    return validate_summary(text, title=title, article_excerpt=article_excerpt)
+    """Deterministic summary only (legacy signature)."""
+    from services.deterministic_summary import deterministic_summary_for_article
 
-
-def summarize_title(title: str, article_text: Optional[str] = None) -> str:
-    """
-    Return a readable summary (OpenAI or local), normalized for storage.
-
-    - If OPENAI_API_KEY exists, try OpenAI (article_text preferred over title-only).
-    - On missing key or any API error, fall back to local summarizer.
-    """
-    key = get_openai_api_key()
-    model = (os.environ.get("OPENAI_MODEL") or _DEFAULT_OPENAI_MODEL).strip()
-    _log_verification_header(key_present=bool(key), model=model)
-
-    if key:
-        ai = _openai_summarize(title, article_text, key, model)
-        if ai:
-            out = normalize_stored_summary(ai, title, article_text)
-            _log_sample_summary(path_used="openai", summary=out)
-            return out
-        print("[summarize] OpenAI failed or empty response; using local fallback")
-    else:
-        print("[summarize] no API key; using local fallback")
-
-    local = _local_summarize_title(title)
-    out = normalize_stored_summary(local, title, article_text)
-    _log_sample_summary(path_used="local_fallback", summary=out)
+    out, _ = deterministic_summary_for_article(title or text, article_excerpt)
     return out
 
 
-def quick_fallback_summary(title: str) -> str:
+def summarize_title(title: str, article_text: Optional[str] = None) -> str:
+    """Summary text for one story: OpenAI when enabled, else deterministic fallback."""
+    text, src = summarize_title_with_source(title, article_text)
+    print(f"[summarize] summarize_title summary_source={src}")
+    return text
+
+
+def summarize_title_with_source(
+    title: str,
+    article_text: Optional[str] = None,
+    article_link: Optional[str] = None,
+    source: Optional[str] = None,
+) -> Tuple[str, str]:
+    """Same as summarize_title but returns (text, source) for logging/persistence paths."""
+    from services.deterministic_summary import deterministic_summary_for_article
+
+    t = (title or "").strip()
+    ex = _maybe_enrich_excerpt(
+        title=t,
+        article_excerpt=article_text,
+        article_link=article_link,
+        source=source,
+    )
+
+    ai_raw = _openai_summarize(t, ex)
+    if ai_raw:
+        out = validate_summary(ai_raw, title=t, article_excerpt=ex)
+        if out:
+            return out, "openai"
+
+    out, src = deterministic_summary_for_article(t, ex)
+    return out, src
+
+
+def is_summary_redundant_with_title(summary: str, title: str) -> bool:
     """
-    Fast, non-OpenAI summary used at ingest and edge cases.
-    Same length/style rules as LLM summaries.
+    True if summary adds almost nothing beyond the headline (bad UX).
+    Used to prefer rss_excerpt-based text instead.
     """
-    raw = _local_summarize_title(title)
-    return normalize_stored_summary(raw, title, None)
+    s = (summary or "").strip()
+    t = (title or "").strip()
+    if not s or not t:
+        return False
+    sl, tl = s.lower(), t.lower()
+    if sl == tl:
+        return True
+    # Title contained in summary as whole phrase (common bad pattern).
+    if len(tl) > 20 and tl in sl and len(s) < len(t) + 25:
+        return True
+    ratio = SequenceMatcher(None, sl, tl).ratio()
+    if ratio >= 0.88:
+        return True
+    # Share almost all words (order may differ slightly).
+    sw = set(w for w in re.findall(r"[a-z0-9']+", sl) if len(w) > 2)
+    tw = set(w for w in re.findall(r"[a-z0-9']+", tl) if len(w) > 2)
+    if tw and sw.issubset(tw) and len(sw) >= min(4, len(tw)):
+        return True
+    return False
+
+
+def repair_low_quality_summary(
+    summary: str,
+    title: str,
+    article_excerpt: Optional[str],
+) -> str:
+    """
+    If summary is thin or repeats the title, rebuild from excerpt or title heuristics.
+    Does not call OpenAI.
+    """
+    s = (summary or "").strip()
+    t = (title or "").strip()
+    ex = (article_excerpt or "").strip() if article_excerpt else ""
+
+    if ex and len(ex) >= 40 and is_summary_redundant_with_title(s, t):
+        fb = _fallback_from_excerpt_or_title(t, ex)
+        if fb and not is_summary_redundant_with_title(fb, t):
+            return fb
+
+    if ex and len(ex) >= 40:
+        fb = _excerpt_two_sentence_fallback(ex, t)
+        if fb:
+            out = clean_summary(fb)
+            if out and not is_summary_redundant_with_title(out, t):
+                return out
+
+    if not s or is_summary_redundant_with_title(s, t):
+        return _fallback_from_excerpt_or_title(t, ex if ex else None)
+
+    return clean_summary(s)
+
+
+def quick_fallback_summary(title: str, article_excerpt: Optional[str] = None) -> str:
+    """Deterministic-only fallback summary."""
+    from services.deterministic_summary import deterministic_summary_for_article
+
+    out, _ = deterministic_summary_for_article(title or "", article_excerpt)
+    return out
+
+
+def display_summary_for_response(
+    *,
+    title: str,
+    summary: Optional[str],
+    rss_excerpt: Optional[str],
+    summary_status: str,
+) -> Tuple[str, str]:
+    """
+    Return summary text for JSON and summary_source for logging:
+      rss | html | content | title_fallback | default
+    """
+    from services.deterministic_summary import (
+        clamp_summary_display,
+        deterministic_summary_for_article,
+    )
+
+    t = (title or "").strip()
+    raw = (summary or "").strip()
+    ex = (rss_excerpt or "").strip() if rss_excerpt else ""
+    st = (summary_status or "pending").strip().lower()
+
+    if raw and st in ("ready", "failed"):
+        out = clamp_summary_display(raw)
+        if out:
+            return out, "stored"
+
+    out, src = deterministic_summary_for_article(t, ex if ex else None)
+    return out, src
 
 
 def _strip_continue_reading(text: str) -> str:
@@ -291,6 +579,9 @@ def _strip_continue_reading(text: str) -> str:
     s = re.sub(r"(?i)\bcontinue\s+reading\b[\s.:]*", "", s)
     s = re.sub(r"(?i)\bread\s+more\b[\s.:]*", "", s)
     s = re.sub(r"(?i)\bfull\s+story\b[\s.:]*", "", s)
+    s = re.sub(r"(?i)\bclick\s+here\b[\s.:]*", "", s)
+    s = re.sub(r"(?i)\bwatch\s+the\s+video\b[\s.:]*", "", s)
+    s = re.sub(r"(?i)\bsee\s+more\b[\s.:]*", "", s)
     return s.strip()
 
 
@@ -368,167 +659,6 @@ def _try_pair_from_title_split(title: str) -> Optional[str]:
                 s2 = _finalize_sentence(_soft_rewrites(_strip_trailing_attribution(b)))
                 return f"{s1} {s2}"
     return None
-
-
-def _build_user_prompt(title: str, article_text: Optional[str]) -> str:
-    body = (article_text or "").strip()
-    if not body:
-        body = f"(Headline only — no article body.)\n{title}"
-    return f"""Summarize this news article for a short-form news app.
-
-STRICT FORMAT:
-- Sentence 1: What happened (clear, complete event)
-- Sentence 2: Key detail, comparison, or data (numbers, timeline, impact)
-- Sentence 3 (optional): Why it matters or what happens next (but must be specific, not vague)
-
-STRICT RULES:
-- 2–3 sentences only
-- Maximum 55 words
-- Each sentence must add NEW information
-- Avoid vague endings like:
-  - "Further updates are expected"
-  - "More details to come"
-  - "Developing story"
-- Do NOT leave the summary feeling incomplete
-- Add context if possible (e.g., comparison to past events or scale)
-
-STYLE:
-- Clear, informative, complete thought
-- Neutral tone
-- Mobile-friendly, easy to scan
-
-Title: {title}
-
-Article:
-{body[:12000]}
-"""
-
-
-_SYSTEM_OPENAI = (
-    "You write only the summary sentences — no labels, no bullet points, no preamble. "
-    "Obey the user's format and word limit exactly."
-)
-
-_SYSTEM_OPENAI_STRICT = (
-    "You write only the summary. The previous draft was too short or too vague. "
-    "You MUST give exactly 2 or 3 concrete sentences under 55 words total. "
-    "Include at least one specific fact (number, date, place, or named entity) in sentence 2. "
-    "Never end with filler about 'updates' or 'details to come'. "
-    "No bullet points."
-)
-
-
-def _openai_summarize(
-    title: str, article_text: Optional[str], api_key: str, model: str
-) -> Optional[str]:
-    """Return summary text, with one strict retry and excerpt fallback if needed."""
-    t = (title or "").strip()
-    if not t:
-        return None
-
-    user_content = _build_user_prompt(t, article_text)
-
-    raw = _openai_chat(api_key, model, _SYSTEM_OPENAI, user_content, temperature=0.25)
-    if not raw:
-        return None
-
-    validated = validate_summary(raw, title=t, article_excerpt=article_text)
-
-    if _needs_quality_retry(validated) and (article_text or "").strip():
-        print("[summarize] quality retry: stricter OpenAI prompt")
-        raw2 = _openai_chat(
-            api_key,
-            model,
-            _SYSTEM_OPENAI_STRICT,
-            user_content,
-            temperature=0.15,
-        )
-        if raw2:
-            validated = validate_summary(raw2, title=t, article_excerpt=article_text)
-
-    if _needs_quality_retry(validated) and (article_text or "").strip():
-        fb = _excerpt_two_sentence_fallback(article_text or "", t)
-        if fb:
-            validated = validate_summary(fb, title=t, article_excerpt=article_text)
-
-    return validated if validated.strip() else None
-
-
-def _openai_chat(
-    api_key: str,
-    model: str,
-    system_msg: str,
-    user_content: str,
-    *,
-    temperature: float,
-) -> Optional[str]:
-    try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_content},
-                ],
-                "max_tokens": 220,
-                "temperature": temperature,
-            },
-            timeout=_OPENAI_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
-        stripped = _strip_bullets_and_join_lines(text)
-        return stripped if stripped else None
-    except Exception as e:
-        print(f"[summarize] OpenAI request failed: {e}")
-        return None
-
-
-def _log_verification_header(*, key_present: bool, model: str) -> None:
-    global _VERIFICATION_HEADER_LOGGED
-    if _VERIFICATION_HEADER_LOGGED:
-        return
-    _VERIFICATION_HEADER_LOGGED = True
-    print(f"[summarize] OPENAI_API_KEY present: {'yes' if key_present else 'no'}")
-    print(f"[summarize] model configured: {model}")
-    if key_present:
-        print("[summarize] strategy: try OpenAI first, then local fallback if needed")
-    else:
-        print("[summarize] strategy: local fallback only")
-
-
-def _log_sample_summary(*, path_used: str, summary: str) -> None:
-    global _SAMPLE_SUMMARY_LOGGED
-    if _SAMPLE_SUMMARY_LOGGED or not (summary or "").strip():
-        return
-    _SAMPLE_SUMMARY_LOGGED = True
-    s = summary.strip()
-    preview = s if len(s) <= 220 else s[:220] + "..."
-    print(f"[summarize] path used for sample: {path_used}")
-    print(f"[summarize] sample summary: {preview!r}")
-
-
-def _strip_bullets_and_join_lines(text: str) -> str:
-    s = (text or "").strip()
-    if not s:
-        return ""
-    lines = [ln.strip() for ln in s.splitlines() if ln.strip()]
-    if not lines:
-        return ""
-    out_lines = []
-    for ln in lines:
-        ln = re.sub(r"^[\-\*•]\s+", "", ln)
-        if ln:
-            out_lines.append(ln)
-    joined = " ".join(out_lines)
-    joined = re.sub(r"\s+", " ", joined).strip()
-    return joined
 
 
 def _try_sports_down_ot(s: str) -> Optional[str]:
