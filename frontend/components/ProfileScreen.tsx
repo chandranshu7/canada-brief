@@ -269,8 +269,8 @@ export function ProfileScreen({
         <div>
           <p className="text-lg font-semibold text-[var(--cb-text)]">Canada Brief</p>
           <p className="mt-2 text-sm leading-relaxed text-[var(--cb-text-secondary)]">
-            A calmer, mobile-first Canadian news reader. Browse national coverage or
-            drill into your city and region — all in one place.
+            A calmer, mobile-friendly Canadian news reader. Browse national coverage
+            or drill into your city and region — all in one place.
           </p>
           <p className="mt-3 text-xs text-[var(--cb-text-muted)]">
             Version {APP_VERSION}

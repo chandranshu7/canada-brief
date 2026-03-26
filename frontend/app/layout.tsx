@@ -23,7 +23,7 @@ const ibmMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Canada Brief",
   description:
-    "Mobile-first Canadian news — browse national and local feeds with a clean reading experience.",
+    "Mobile-friendly Canadian news — browse national and local feeds with a clean reading experience.",
 };
 
 export default function RootLayout({
