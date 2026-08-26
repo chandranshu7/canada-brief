@@ -32,6 +32,7 @@ from database import (
     count_news_search,
     count_pending_articles,
     get_articles_page,
+    get_articles_for_rerank,
     get_articles_top,
     get_local_ranked_page,
     init_db,
@@ -44,6 +45,7 @@ from database import (
     search_news_local_page,
     search_news_page,
     update_local_article_summary_fields,
+    update_article_rank_scores,
 )
 from services.canada_locations import location_meta_for_log
 from services.local_source_config import build_local_feed_plan, local_coverage_from_plan
@@ -248,6 +250,27 @@ _last_ingest_completed_at: Optional[str] = None
 _background_ingest_lock = threading.Lock()
 # Background merge ingest: every ~2.5 minutes for fresher Canada Brief (env override).
 INGEST_INTERVAL_SEC = int(os.environ.get("INGEST_INTERVAL_SEC", "150"))
+RERANK_MIN_SCORE_DELTA = float(os.environ.get("RERANK_MIN_SCORE_DELTA", "0.05"))
+
+
+def _rerank_general_articles() -> Dict[str, Any]:
+    """Decay stored recency scores, updating only rows whose score materially changed."""
+    t0 = time.time()
+    rows = get_articles_for_rerank()
+    updates: List[Dict[str, Any]] = []
+    threshold = max(0.0, RERANK_MIN_SCORE_DELTA)
+    for row in rows:
+        new_score = compute_rank_score(row)
+        old_score = float(row.get("rank_score") or 0.0)
+        if abs(new_score - old_score) >= threshold:
+            updates.append({"id": row["id"], "rank_score": new_score})
+    updated = update_article_rank_scores(updates)
+    elapsed = time.time() - t0
+    print(
+        f"[rank] periodic_rerank scanned={len(rows)} updated={updated} "
+        f"threshold={threshold:.3f} time_s={elapsed:.3f}"
+    )
+    return {"scanned": len(rows), "updated": updated, "time_seconds": elapsed}
 
 
 def _run_background_general_merge() -> Dict[str, Any]:
@@ -258,6 +281,13 @@ def _run_background_general_merge() -> Dict[str, Any]:
     global _last_ingest_completed_at
     with _background_ingest_lock:
         t_merge = time.time()
+        try:
+            rerank_diag = _rerank_general_articles()
+        except Exception as e:
+            # Feed ingestion should continue even if an old schema or transient DB
+            # issue prevents this maintenance pass.
+            print(f"[rank] periodic_rerank failed (non-fatal): {e}")
+            rerank_diag = {"scanned": 0, "updated": 0, "error": str(e)[:500]}
         try:
             raw_items, fetch_diag = fetch_general_feeds_with_diagnostics()
             clustered = cluster_articles(raw_items)
@@ -312,6 +342,8 @@ def _run_background_general_merge() -> Dict[str, Any]:
             "raw_entries": fetch_diag.get("raw_entries"),
             "candidates": fetch_diag.get("candidates"),
             "clustered": len(clustered),
+            "rerank_scanned": rerank_diag.get("scanned", 0),
+            "rerank_updated": rerank_diag.get("updated", 0),
             "pipeline_skipped_duplicate_link": fetch_diag.get(
                 "pipeline_skipped_duplicate_link"
             ),

@@ -2,14 +2,17 @@
 ranking.py — rank_score for feed order (higher = earlier on page 1).
 
 FORMULA (all components ≥ 0, summed into rank_score):
-  rank_score = recency + coverage + diversity + image + category
+  rank_score = recency + freshness_decay × (coverage + diversity + image + category)
 
   • recency — Exponential decay from publish time (hours). Very new stories get up to
     ~RECENCY_MAX points; older stories stay in the mix but fade, so a big breaking
     cluster can still beat a slightly newer thin item.
 
+  • freshness_decay — Applied to every non-recency signal so a historically strong
+    story cannot permanently outrank current news.
+
   • coverage — From trending_score (= articles merged in the cluster). Heavily covered
-    stories get a strong lift (capped) so “everyone is reporting this” rises.
+    stories get a strong lift (capped) so “everyone is reporting this” rises briefly.
 
   • diversity — Distinct outlet names in `sources[]`. More sources → higher (capped).
 
@@ -34,6 +37,9 @@ _RECENCY_HALF_LIFE_H = 30.0  # hours; ~half weight after this age
 # Extra lift for very fresh items (last ~2h) so /news surfaces breaking Canada stories faster.
 _RECENCY_BOOST_WINDOW_H = 2.0
 _RECENCY_BOOST_EXTRA = 10.0
+# Coverage/diversity/editorial bonuses also fade; otherwise their combined maximum can
+# permanently exceed the full recency score of a new single-source article.
+_SECONDARY_SIGNAL_DECAY_H = 120.0
 
 _COVERAGE_MULT = 3.2
 _COVERAGE_CAP = 14  # max cluster size that still gains linearly (then flat)
@@ -119,6 +125,7 @@ def compute_rank_breakdown(row: Dict[str, Any]) -> Tuple[float, Dict[str, float]
 
     # Recency (+ short-window boost for freshness on page 1)
     dt = _parse_published_for_rank(row.get("published"))
+    age_h: Optional[float] = None
     if dt is not None:
         dt = _utc_naive(dt)
         now = datetime.utcnow()
@@ -135,6 +142,16 @@ def compute_rank_breakdown(row: Dict[str, Any]) -> Tuple[float, Dict[str, float]
     for needle, pts in _CATEGORY_BOOSTS:
         if needle in cat_raw:
             category = max(category, pts)
+
+    secondary_decay = (
+        math.exp(-age_h / _SECONDARY_SIGNAL_DECAY_H)
+        if age_h is not None
+        else 0.5
+    )
+    coverage *= secondary_decay
+    diversity *= secondary_decay
+    image *= secondary_decay
+    category *= secondary_decay
 
     parts = {
         "recency": round(recency, 2),

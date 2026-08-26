@@ -689,6 +689,45 @@ def get_articles_top(limit: int) -> List[Dict]:
     return [_article_from_row(r) for r in rows]
 
 
+def get_articles_for_rerank() -> List[Dict]:
+    """Load only fields used by the ranking formula plus the stored score."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, trending_score, sources, image_url, published,
+                       topic_category, category, rank_score
+                FROM news
+                """
+            )
+        ).mappings().all()
+    return [_article_from_row(r) for r in rows]
+
+
+def update_article_rank_scores(updates: List[Dict]) -> int:
+    """Persist a batch of {id, rank_score} updates in one transaction."""
+    if not updates:
+        return 0
+    params = [
+        {"id": int(row["id"]), "rank_score": float(row["rank_score"])}
+        for row in updates
+    ]
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE news
+                SET rank_score = :rank_score
+                WHERE id = :id
+                """
+            ),
+            params,
+        )
+    return len(params)
+
+
 def update_article_summary_fields(
     article_id: int, summary: str, summary_status: str
 ) -> None:
