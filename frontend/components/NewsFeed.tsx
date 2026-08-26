@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Article } from "@/lib/types";
-import { fetchNewsPage } from "@/lib/api";
+import { DEFAULT_PAGE_SIZE, fetchNewsPage } from "@/lib/api";
 import { dedupeFeedArticlesStable } from "@/lib/feedDedupe";
 import { filterArticles, uniqueCategories, uniqueSources } from "@/lib/filterArticles";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
@@ -64,9 +64,6 @@ import { SourceChips } from "./SourceChips";
 const API_HINT =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-/** Slightly larger pages for scroll feed (backend max applies). */
-const FEED_PAGE_SIZE = 15;
-
 const DEBUG = process.env.NODE_ENV === "development";
 
 function debugFeedState(label: string, payload: Record<string, unknown>) {
@@ -118,7 +115,7 @@ export function NewsFeed() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const loadSentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const pageSize = FEED_PAGE_SIZE;
+  const pageSize = DEFAULT_PAGE_SIZE;
   const nextPageRef = useRef(2);
 
   const poolRef = useRef(pool);

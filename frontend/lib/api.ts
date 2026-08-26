@@ -3,8 +3,8 @@ import type { Article } from "./types";
 const DEFAULT_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-/** Must match backend PAGE_SIZE (max rows per page). */
-export const DEFAULT_PAGE_SIZE = 5;
+/** Must match backend PAGE_SIZE (default and max rows per page). */
+export const DEFAULT_PAGE_SIZE = 15;
 
 export type FetchNewsPageResult = {
   articles: Article[];

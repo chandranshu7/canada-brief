@@ -76,7 +76,10 @@ from services.daily_brief import get_daily_brief_payload
 from services.feed_dedupe import dedupe_articles_stable
 from services.summarize import display_summary_for_response
 
-PAGE_SIZE = 5
+# Keep this in sync with the frontend's default feed page size. The endpoint
+# currently uses this value as both its default and its maximum, so silently
+# capping requests below the client's page size breaks pagination accounting.
+PAGE_SIZE = 15
 TOP_STORIES_LIMIT = 3
 LOCAL_INGEST_MAX_AGE_SEC = int(os.environ.get("LOCAL_INGEST_MAX_AGE_SEC", "900"))
 
