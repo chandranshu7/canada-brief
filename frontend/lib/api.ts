@@ -65,6 +65,8 @@ export async function fetchNewsPage(options: {
   locationSlug?: string | null;
   /** Backend search across title, summary, region, source, categories (sent as `q`). */
   search?: string | null;
+  /** Optional cancellation/timeout signal, primarily for server-side prefetching. */
+  signal?: AbortSignal;
 }): Promise<FetchNewsPageResult> {
   const page = options.page ?? 1;
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -99,6 +101,7 @@ export async function fetchNewsPage(options: {
   const url = `${base}/news?${params.toString()}`;
   const res = await fetch(url, {
     cache: refresh ? "no-store" : "default",
+    signal: options.signal,
     headers: refresh
       ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
       : undefined,

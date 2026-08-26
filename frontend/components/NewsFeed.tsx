@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Article } from "@/lib/types";
-import { DEFAULT_PAGE_SIZE, fetchNewsPage } from "@/lib/api";
+import {
+  DEFAULT_PAGE_SIZE,
+  fetchNewsPage,
+  type FetchNewsPageResult,
+} from "@/lib/api";
 import { dedupeFeedArticlesStable } from "@/lib/feedDedupe";
 import { filterArticles, uniqueCategories, uniqueSources } from "@/lib/filterArticles";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
@@ -71,10 +75,16 @@ function debugFeedState(label: string, payload: Record<string, unknown>) {
   console.log(`[NewsFeed] ${label}`, payload);
 }
 
-export function NewsFeed() {
-  const [pool, setPool] = useState<Article[]>([]);
-  const [totalRows, setTotalRows] = useState(0);
-  const [initialLoading, setInitialLoading] = useState(true);
+type NewsFeedProps = {
+  initialPage?: FetchNewsPageResult | null;
+};
+
+export function NewsFeed({ initialPage = null }: NewsFeedProps) {
+  const [pool, setPool] = useState<Article[]>(() =>
+    dedupeFeedArticlesStable(initialPage?.articles ?? []).items,
+  );
+  const [totalRows, setTotalRows] = useState(initialPage?.totalCount ?? 0);
+  const [initialLoading, setInitialLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,6 +133,7 @@ export function NewsFeed() {
   const locationPrefRef = useRef(locationPref);
   const feedModeRef = useRef(feedMode);
   const loadMoreInFlightRef = useRef<Promise<Article[]> | null>(null);
+  const initialServerPagePendingRef = useRef(Boolean(initialPage));
 
   useEffect(() => {
     poolRef.current = pool;
@@ -323,8 +334,20 @@ export function NewsFeed() {
 
   useEffect(() => {
     if (!prefsHydrated) return;
+    if (initialServerPagePendingRef.current) {
+      initialServerPagePendingRef.current = false;
+      if (
+        feedModeRef.current === "general" &&
+        !debouncedSearch.trim()
+      ) {
+        debugFeedState("using server-prefetched initial page", {
+          articles: poolRef.current.length,
+        });
+        return;
+      }
+    }
     void loadInitial();
-  }, [loadInitial, prefsHydrated]);
+  }, [loadInitial, prefsHydrated, debouncedSearch]);
 
   const markSeen = useCallback((link: string) => {
     const key = normalizeArticleLink(link);
