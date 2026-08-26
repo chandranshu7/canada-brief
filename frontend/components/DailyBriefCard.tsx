@@ -27,12 +27,14 @@ function BriefStoryImage({
   source,
   title,
   storyNumber,
+  priority = false,
 }: {
   imageUrl?: string;
   videoUrl?: string;
   source?: string;
   title?: string;
   storyNumber: string;
+  priority?: boolean;
 }) {
   const [broken, setBroken] = useState(false);
   const raw = (imageUrl ?? "").trim();
@@ -56,6 +58,11 @@ function BriefStoryImage({
         <img
           src={finalSrc}
           alt=""
+          width={1200}
+          height={800}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
           className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105"
           onError={() => setBroken(true)}
         />
@@ -190,6 +197,7 @@ export function DailyBriefCard({
                     source={source}
                     title={s.title}
                     storyNumber={displayNumber}
+                    priority={i === 0}
                   />
 
                   {/* Absolute positioned content overlaid on bottom of image */}

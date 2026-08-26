@@ -33,6 +33,8 @@ type FeedCardProps = {
   bookmarked?: boolean;
   onToggleBookmark?: (article: Article) => void;
   followTopicBadge?: string;
+  /** Load eagerly only when this card is the first visible LCP candidate. */
+  imagePriority?: boolean;
 };
 
 export function FeedCard({
@@ -42,6 +44,7 @@ export function FeedCard({
   bookmarked = false,
   onToggleBookmark,
   followTopicBadge,
+  imagePriority = false,
 }: FeedCardProps) {
   const img = (article.image_url ?? "").trim();
   const [imgBroken, setImgBroken] = useState(false);
@@ -81,6 +84,11 @@ export function FeedCard({
               <img
                 src={finalImageSrc}
                 alt=""
+                width={1200}
+                height={800}
+                loading={imagePriority ? "eager" : "lazy"}
+                fetchPriority={imagePriority ? "high" : "auto"}
+                decoding="async"
                 className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 onError={() => setImgBroken(true)}
               />

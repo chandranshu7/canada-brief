@@ -48,6 +48,10 @@ export function ArticleCard({ article, index = 0 }: ArticleCardProps) {
             <img
               src={img}
               alt=""
+              width={1200}
+              height={800}
+              loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105"
               onError={() => setImgBroken(true)}
             />

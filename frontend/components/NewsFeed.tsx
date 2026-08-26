@@ -805,6 +805,14 @@ export function NewsFeed() {
                   <FeedCard
                     article={article}
                     index={i}
+                    imagePriority={
+                      i === 0 &&
+                      !(
+                        navTab === "home" &&
+                        feedMode === "general" &&
+                        !debouncedSearch.trim()
+                      )
+                    }
                     onOpen={handleOpenArticle}
                     bookmarked={isLinkSaved(article.link ?? "")}
                     onToggleBookmark={handleToggleSave}
@@ -833,6 +841,7 @@ export function NewsFeed() {
                   <FeedCard
                     article={article}
                     index={i}
+                    imagePriority={i === 0}
                     onOpen={handleOpenArticle}
                     bookmarked
                     onToggleBookmark={handleToggleSave}

@@ -116,6 +116,11 @@ export function ArticleDetailModal({
               <img
                 src={imageSrc}
                 alt=""
+                width={1200}
+                height={800}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
                 className="h-full w-full object-cover"
               />
             ) : (
