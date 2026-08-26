@@ -157,7 +157,9 @@ export async function fetchDailyBrief(
   apiBase?: string,
 ): Promise<DailyBriefResponse> {
   const base = (apiBase ?? DEFAULT_BASE).replace(/\/$/, "");
-  const res = await fetch(`${base}/daily-brief`, { cache: "default" });
+  // Versioned once after the ranking-cache migration so browsers bypass any older
+  // five-minute response stored under the unversioned URL.
+  const res = await fetch(`${base}/daily-brief?v=2`, { cache: "default" });
   if (!res.ok) {
     throw new Error(`Failed to load Daily Brief (${res.status})`);
   }

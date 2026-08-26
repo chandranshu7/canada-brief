@@ -96,10 +96,14 @@ DAILY_BRIEF_CACHE_MAX_AGE_SEC = int(
 )
 
 
-def _public_cache_control(max_age: int) -> str:
+def _public_cache_control(max_age: int, shared_max_age: Optional[int] = None) -> str:
     """Short shared-cache policy with a bounded stale response fallback."""
     ttl = max(0, int(max_age))
-    return f"public, max-age={ttl}, s-maxage={ttl}, stale-while-revalidate={ttl * 4}"
+    shared_ttl = ttl if shared_max_age is None else max(0, int(shared_max_age))
+    return (
+        f"public, max-age={ttl}, s-maxage={shared_ttl}, "
+        f"stale-while-revalidate={shared_ttl * 4}"
+    )
 
 
 def _search_query_term(q: Optional[str], search: Optional[str]) -> str:
@@ -1180,7 +1184,10 @@ def daily_brief():
     return JSONResponse(
         content=jsonable_encoder(payload),
         headers={
-            "Cache-Control": _public_cache_control(DAILY_BRIEF_CACHE_MAX_AGE_SEC)
+            "Cache-Control": _public_cache_control(
+                NEWS_CACHE_MAX_AGE_SEC,
+                shared_max_age=DAILY_BRIEF_CACHE_MAX_AGE_SEC,
+            )
         },
     )
 
