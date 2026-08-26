@@ -86,6 +86,7 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
   const [totalRows, setTotalRows] = useState(initialPage?.totalCount ?? 0);
   const [initialLoading, setInitialLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [localRefreshPending, setLocalRefreshPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [category, setCategory] = useState("All");
@@ -133,6 +134,8 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
   const locationPrefRef = useRef(locationPref);
   const feedModeRef = useRef(feedMode);
   const loadMoreInFlightRef = useRef<Promise<Article[]> | null>(null);
+  const localRefreshPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localRefreshPollCountRef = useRef(0);
   const initialServerPagePendingRef = useRef(Boolean(initialPage));
 
   useEffect(() => {
@@ -204,6 +207,14 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
     [feedMode, locationPref],
   );
 
+  useEffect(() => {
+    localRefreshPollCountRef.current = 0;
+    if (localRefreshPollRef.current !== null) {
+      clearTimeout(localRefreshPollRef.current);
+      localRefreshPollRef.current = null;
+    }
+  }, [prefKey]);
+
   const hasLocalLocation = Boolean(locationPref.city && locationPref.province);
 
   const lastPage = Math.max(1, Math.ceil(totalRows / pageSize) || 1);
@@ -222,6 +233,7 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
       if (mode === "local" && (!loc.city || !loc.province)) {
         setPool([]);
         setTotalRows(0);
+        setLocalRefreshPending(false);
         debugFeedState("local mode — awaiting location", {});
         return;
       }
@@ -246,7 +258,36 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
       }
       setPool(initialDeduped.items);
       setTotalRows(result.totalCount);
+      setLocalRefreshPending(result.refreshPending);
       nextPageRef.current = 2;
+
+      if (localRefreshPollRef.current !== null) {
+        clearTimeout(localRefreshPollRef.current);
+        localRefreshPollRef.current = null;
+      }
+      if (!result.refreshPending) {
+        localRefreshPollCountRef.current = 0;
+      } else if (
+        mode === "local" &&
+        localRefreshPollCountRef.current < 15
+      ) {
+        localRefreshPollCountRef.current += 1;
+        const expectedCity = loc.city;
+        const expectedProvince = loc.province;
+        localRefreshPollRef.current = setTimeout(() => {
+          const current = locationPrefRef.current;
+          if (
+            feedModeRef.current === "local" &&
+            current.city === expectedCity &&
+            current.province === expectedProvince
+          ) {
+            setReloadNonce((n) => n + 1);
+          }
+        }, 4_000);
+      } else if (result.refreshPending) {
+        setLocalRefreshPending(false);
+        setError("Local news is taking longer than expected. Please try again.");
+      }
 
       const seenSet = loadSeenLinks();
       setSeen(seenSet);
@@ -256,6 +297,7 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
         totalCount: result.totalCount,
       });
     } catch (e) {
+      setLocalRefreshPending(false);
       setError(
         e instanceof Error ? e.message : "Something went wrong loading the feed.",
       );
@@ -330,6 +372,11 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
   useEffect(() => {
     setSeen(loadSeenLinks());
     setSeenReady(true);
+    return () => {
+      if (localRefreshPollRef.current !== null) {
+        clearTimeout(localRefreshPollRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -553,7 +600,9 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
 
   const isFeedRefreshing = initialLoading && displayPool.length > 0;
   const showInitialSkeleton =
-    initialLoading && displayPool.length === 0 && showFeedList;
+    (initialLoading || localRefreshPending) &&
+    displayPool.length === 0 &&
+    showFeedList;
 
   const noMatches =
     feedReady && !error && displayPool.length > 0 && filtered.length === 0;
@@ -562,6 +611,7 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
     feedReady &&
     !error &&
     !initialLoading &&
+    !localRefreshPending &&
     displayPool.length === 0 &&
     !(feedMode === "local" && !hasLocalLocation);
 
@@ -641,7 +691,7 @@ export function NewsFeed({ initialPage = null }: NewsFeedProps) {
 
       <main
         className="cb-shell mx-auto mt-2 w-full max-w-6xl rounded-3xl px-4 pt-4 transition-opacity duration-200 ease-out sm:mt-3 sm:px-5 lg:px-8"
-        aria-busy={initialLoading || loadingMore}
+        aria-busy={initialLoading || loadingMore || localRefreshPending}
       >
         {showFeedSurface && (
           <div className="mb-4 space-y-4">

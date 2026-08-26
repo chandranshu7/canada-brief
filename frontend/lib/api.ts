@@ -14,6 +14,8 @@ export type FetchNewsPageResult = {
   totalCount: number;
   page: number;
   pageSize: number;
+  /** True while a stale/empty local scope refreshes in the background. */
+  refreshPending: boolean;
 };
 
 function parseNewsPayload(data: unknown): { articles: Article[]; topStories?: Article[] } {
@@ -118,6 +120,8 @@ export async function fetchNewsPage(options: {
     res.headers.get("X-Total-Count") ?? res.headers.get("x-total-count");
   const parsed = headerTotal != null ? parseInt(headerTotal, 10) : NaN;
   const totalCount = Number.isFinite(parsed) ? parsed : articles.length;
+  const refreshPending =
+    (res.headers.get("X-Refresh-Pending") ?? "").toLowerCase() === "true";
 
   return {
     articles,
@@ -125,6 +129,7 @@ export async function fetchNewsPage(options: {
     totalCount,
     page,
     pageSize,
+    refreshPending,
   };
 }
 
