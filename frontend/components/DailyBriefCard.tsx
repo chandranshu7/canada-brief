@@ -52,7 +52,7 @@ function BriefStoryImage({
   const placeholderBg = `linear-gradient(135deg, hsl(${hue} 45% 34%), hsl(${(hue + 48) % 360} 52% 18%))`;
 
   return (
-    <div className="relative h-72 w-full overflow-hidden sm:h-96">
+    <div className="relative h-[28rem] w-full overflow-hidden sm:h-96">
       {show ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -162,11 +162,11 @@ export function DailyBriefCard({
             Top Headlines
           </span>
         </h2>
-        <div className="mt-1 flex items-center gap-3">
-          <p className="text-lg font-medium text-[var(--cb-text-secondary)]">
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <p className="text-base font-medium text-[var(--cb-text-secondary)] sm:text-lg">
             {headerLine}
           </p>
-          <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)] ring-1 ring-cyan-500/40">
+          <span className="whitespace-nowrap rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)] ring-1 ring-cyan-500/40">
             {readLabel || "Quick Read"}
           </span>
         </div>
@@ -201,13 +201,13 @@ export function DailyBriefCard({
                   />
 
                   {/* Absolute positioned content overlaid on bottom of image */}
-                  <div className="absolute inset-x-0 bottom-0 p-6">
+                  <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6">
                     {cat && (
                       <span className={`mb-3 inline-block rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white shadow-md ring-1 ring-white/20 backdrop-blur-md ${categoryBadgeClass(cat)}`}>
                         {cat}
                       </span>
                     )}
-                    <h3 className="font-display text-2xl font-bold leading-tight tracking-tight text-white transition-colors duration-200 group-hover:text-cyan-300">
+                    <h3 className="font-display line-clamp-4 text-[1.35rem] font-bold leading-tight tracking-tight text-white transition-colors duration-200 group-hover:text-cyan-300 sm:text-2xl">
                       {s.title}
                     </h3>
 
