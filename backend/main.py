@@ -252,6 +252,8 @@ app.add_middleware(
 # Background general ingest (merge-by-link); does not replace full refresh via /news?refresh=true.
 _last_ingest_completed_at: Optional[str] = None
 _background_ingest_lock = threading.Lock()
+_general_ingest_schedule_lock = threading.Lock()
+_general_ingest_scheduled = False
 _local_ingest_lock = threading.Lock()
 _local_ingest_scopes: set[tuple[str, str]] = set()
 # Background merge ingest: every ~2.5 minutes for fresher Canada Brief (env override).
@@ -814,6 +816,27 @@ def _schedule_local_ingest(city: str, province: str) -> bool:
     return True
 
 
+def _background_general_ingest_worker() -> None:
+    global _general_ingest_scheduled
+    try:
+        _run_background_general_merge()
+    finally:
+        with _general_ingest_schedule_lock:
+            _general_ingest_scheduled = False
+
+
+def _schedule_general_ingest() -> bool:
+    """Start at most one request-triggered general ingest."""
+    global _general_ingest_scheduled
+    with _general_ingest_schedule_lock:
+        if _general_ingest_scheduled or _background_ingest_lock.locked():
+            return False
+        _general_ingest_scheduled = True
+    threading.Thread(target=_background_general_ingest_worker, daemon=True).start()
+    print("[ingest] general background scheduled")
+    return True
+
+
 @app.get("/news")
 def get_news(
     refresh: bool = False,
@@ -868,7 +891,7 @@ def get_news(
 
     n_ingress = n_cluster = n_saved = 0
     ingest_elapsed_s = 0.0
-    local_refresh_pending = False
+    refresh_pending = False
 
     city_clean = (city or "").strip() or None
     province_clean = (province or "").strip() or None
@@ -914,19 +937,17 @@ def get_news(
                 ) from e
     elif need_local and _local_scope_is_stale(city_clean or "", province_clean or ""):
         refresh_mode = "stale_local_background"
-        local_refresh_pending = True
+        refresh_pending = True
         print(
             "[/news] local scope stale/empty — scheduling background ingest "
             f"(max_age_s={LOCAL_INGEST_MAX_AGE_SEC})"
         )
         _schedule_local_ingest(city_clean or "", province_clean or "")
     elif count_articles() == 0:
-        refresh_mode = "cold_start_general"
-        print("[/news] DB empty — cold-start general ingest")
-        try:
-            n_ingress, n_cluster, n_saved, ingest_elapsed_s = _run_ingest_general()
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Ingest failed: {e}") from e
+        refresh_mode = "cold_start_general_background"
+        refresh_pending = True
+        print("[/news] DB empty — scheduling background general ingest")
+        _schedule_general_ingest()
     else:
         refresh_mode = "read"
         print("[/news] serving from database")
@@ -1190,14 +1211,14 @@ def get_news(
 
     cache_control = (
         "no-store"
-        if refresh or pending_on_page > 0 or local_refresh_pending
+        if refresh or pending_on_page > 0 or refresh_pending
         else _public_cache_control(NEWS_CACHE_MAX_AGE_SEC)
     )
     return JSONResponse(
         content=jsonable_encoder(payload),
         headers={
             "X-Total-Count": str(total),
-            "X-Refresh-Pending": "true" if local_refresh_pending else "false",
+            "X-Refresh-Pending": "true" if refresh_pending else "false",
             "Cache-Control": cache_control,
         },
     )
