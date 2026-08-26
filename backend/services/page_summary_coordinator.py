@@ -14,7 +14,9 @@ from typing import List, Optional, Tuple
 
 from database import (
     get_articles_page,
+    get_local_ranked_page,
     load_local_feed_sorted,
+    local_ranked_feed_ready,
     search_news_local_page,
     search_news_page,
 )
@@ -89,7 +91,13 @@ def _page_rows_for_mode(
     if (mode or "").strip().lower() == "local" and (city or "").strip() and (
         province or ""
     ).strip():
-        full = load_local_feed_sorted(city.strip(), province.strip())
+        city_clean = city.strip()
+        province_clean = province.strip()
+        if local_ranked_feed_ready(city_clean, province_clean):
+            return get_local_ranked_page(
+                offset, limit, city_clean, province_clean
+            )
+        full = load_local_feed_sorted(city_clean, province_clean)
         return full[offset : offset + limit]
     return get_articles_page(offset, limit)
 

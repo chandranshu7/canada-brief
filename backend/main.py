@@ -27,14 +27,17 @@ from fastapi.responses import JSONResponse
 from database import (
     count_articles,
     count_local_articles,
+    count_local_ranked_articles,
     count_news_local_search,
     count_news_search,
     count_pending_articles,
     get_articles_page,
     get_articles_top,
+    get_local_ranked_page,
     init_db,
     local_scope_max_last_updated,
     load_local_feed_sorted,
+    local_ranked_feed_ready,
     merge_news_articles,
     save_local_news_items,
     save_news_items,
@@ -45,6 +48,9 @@ from database import (
 from services.canada_locations import location_meta_for_log
 from services.local_source_config import build_local_feed_plan, local_coverage_from_plan
 from services.local_feed import (
+    classify_local_tier_for_article,
+    effective_local_score,
+    exclude_in_local_feed,
     log_curated_sources,
     log_local_feed_summary,
     log_local_pagination_debug,
@@ -459,7 +465,11 @@ def _ingest_initial_story_buffer() -> tuple[int, int, int]:
 
 def _ingest_initial_story_buffer_local(city: str, province: str) -> tuple[int, int, int]:
     """First three Local-mode stories after a local ingest (news_local)."""
-    rows = load_local_feed_sorted(city, province)[:3]
+    rows = (
+        get_local_ranked_page(0, 3, city, province)
+        if local_ranked_feed_ready(city, province)
+        else load_local_feed_sorted(city, province)[:3]
+    )
     pending = [r for r in rows if _row_pending_llm(r)]
     if not pending:
         return 0, 0, 0
@@ -537,8 +547,11 @@ def _story_buffer_prewarm_worker(
     try:
         local_full: Optional[List[dict]] = None
         if mode == "local" and city and province:
-            local_full = load_local_feed_sorted(city, province)
-            total_rows = len(local_full)
+            if local_ranked_feed_ready(city, province):
+                total_rows = count_local_ranked_articles(city, province)
+            else:
+                local_full = load_local_feed_sorted(city, province)
+                total_rows = len(local_full)
         else:
             total_rows = count_articles()
         cursor = max(0, min(cursor, max(0, total_rows - 1)))
@@ -552,14 +565,21 @@ def _story_buffer_prewarm_worker(
             )
             return
 
-        if mode == "local" and city and province and local_full is not None:
-            if cursor + 1 >= len(local_full):
+        if mode == "local" and city and province:
+            if local_full is None:
+                ahead = get_local_ranked_page(
+                    cursor + 1, STORY_BUFFER_AHEAD, city, province
+                )
+            elif cursor + 1 >= len(local_full):
                 print(
                     f"[story_prewarm] skip cursor={cursor} no_stories_ahead "
                     f"local_feed_len={len(local_full)}"
                 )
                 return
-            ahead = local_full[cursor + 1 : cursor + 1 + STORY_BUFFER_AHEAD]
+            else:
+                ahead = local_full[
+                    cursor + 1 : cursor + 1 + STORY_BUFFER_AHEAD
+                ]
         else:
             ahead = get_articles_page(cursor + 1, STORY_BUFFER_AHEAD)
         ready_count = sum(1 for r in ahead if _row_buffer_satisfied(r))
@@ -688,6 +708,7 @@ def _run_ingest_local(city: str, province: str) -> tuple[int, int, int, float]:
     n_cluster = len(clustered)
     now = datetime.now(timezone.utc).isoformat()
     prefer_ai = bool(get_openai_api_key())
+    local_plan = build_local_feed_plan(city, province)
     for row in clustered:
         ex = row.get("rss_excerpt") or ""
         row["rss_excerpt"] = str(ex)[:12000]
@@ -696,6 +717,16 @@ def _run_ingest_local(city: str, province: str) -> tuple[int, int, int, float]:
             row["summary_status"] = "pending"
         row["rank_score"] = compute_rank_score(row)
         row["last_updated_at"] = now
+        row["local_tier"] = (
+            4
+            if exclude_in_local_feed(row)
+            else classify_local_tier_for_article(
+                row, city, province, local_plan.metro_hub
+            )
+        )
+        row["local_score"] = effective_local_score(
+            row, city, province, local_plan.metro_hub
+        )
     log_rank_debug_top(clustered, limit=10)
     log_topic_classification_batch(clustered, log_prefix="local", stage="post_cluster")
     save_local_news_items(clustered, city, province)
@@ -882,15 +913,26 @@ def get_news(
         print(
             f"[/news] feed_mode=local city={city_clean!r} province={province_clean!r}"
         )
-        sorted_full = load_local_feed_sorted(
-            city_clean, province_clean, plan=local_feed_plan
-        )
-        total = len(sorted_full)
-        log_curated_sources(city_clean)
-        log_location_rank_mix(sorted_full, city_clean, province_clean)
-        log_top_ranked_with_location(sorted_full, city_clean, province_clean)
-        log_local_feed_summary(sorted_full, city_clean, province_clean)
-        page_rows = sorted_full[offset : offset + page_size]
+        if local_ranked_feed_ready(city_clean, province_clean):
+            total = count_local_ranked_articles(city_clean, province_clean)
+            page_rows = get_local_ranked_page(
+                offset, page_size, city_clean, province_clean
+            )
+            print(
+                f"[/news] local_ranked_sql_page total={total} "
+                f"offset={offset} rows={len(page_rows)}"
+            )
+        else:
+            # Compatibility for scopes ingested before local_tier/local_score existed.
+            sorted_full = load_local_feed_sorted(
+                city_clean, province_clean, plan=local_feed_plan
+            )
+            total = len(sorted_full)
+            log_curated_sources(city_clean)
+            log_location_rank_mix(sorted_full, city_clean, province_clean)
+            log_top_ranked_with_location(sorted_full, city_clean, province_clean)
+            log_local_feed_summary(sorted_full, city_clean, province_clean)
+            page_rows = sorted_full[offset : offset + page_size]
         # Local mode: do not attach a global "top 3" strip — it repeated the same ids on
         # every page (summary logs + JSON) and was not part of the paginated slice.
         top_stories = []

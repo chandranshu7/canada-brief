@@ -70,7 +70,8 @@ READ_COLUMNS = ("id",) + ARTICLE_COLUMNS
 
 # Local-mode table: same article fields + which (city, province) ingest produced this row.
 SCOPE_COLUMNS = ("scope_city", "scope_province")
-ARTICLE_COLUMNS_LOCAL = ARTICLE_COLUMNS + SCOPE_COLUMNS
+LOCAL_RANK_COLUMNS = ("local_tier", "local_score")
+ARTICLE_COLUMNS_LOCAL = ARTICLE_COLUMNS + LOCAL_RANK_COLUMNS + SCOPE_COLUMNS
 READ_COLUMNS_LOCAL = ("id",) + ARTICLE_COLUMNS_LOCAL
 
 metadata = MetaData()
@@ -134,6 +135,8 @@ news_local_table = Table(
     Column("rank_score", Float),
     Column("rss_excerpt", Text),
     Column("last_updated_at", Text),
+    Column("local_tier", Integer),
+    Column("local_score", Float),
     Column("scope_city", Text, nullable=False),
     Column("scope_province", Text, nullable=False),
 )
@@ -211,6 +214,13 @@ def _ensure_read_indexes(conn) -> None:
         CREATE INDEX IF NOT EXISTS ix_news_local_scope_updated
         ON news_local (scope_city, scope_province, last_updated_at DESC)
         """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_news_local_ranked_page
+        ON news_local (
+            scope_city, scope_province, local_tier,
+            local_score DESC, id DESC
+        )
+        """,
     )
     for statement in statements:
         conn.execute(text(statement))
@@ -229,9 +239,14 @@ def _migrate_add_missing_columns(conn) -> None:
         existing = {c["name"] for c in insp.get_columns(table_name)}
         for col in expected:
             if col not in existing:
-                conn.execute(
-                    text(f"ALTER TABLE {table_name} ADD COLUMN {col} TEXT")
-                )
+                sql_type = {
+                    "cluster_id": "INTEGER",
+                    "trending_score": "INTEGER",
+                    "rank_score": "REAL",
+                    "local_tier": "INTEGER",
+                    "local_score": "REAL",
+                }.get(col, "TEXT")
+                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col} {sql_type}"))
                 print(f"[db] migrated: {table_name}.{col} added")
 
 
@@ -372,6 +387,10 @@ def clear_local_scope(city: str, province: str) -> None:
 def _article_row_for_local_insert(a: Dict) -> Dict:
     """Flat dict for news_local bulk insert."""
     base = _article_row_for_insert(a)
+    tier = a.get("local_tier")
+    score = a.get("local_score")
+    base["local_tier"] = int(tier) if tier is not None else None
+    base["local_score"] = float(score) if score is not None else None
     base["scope_city"] = a.get("scope_city")
     base["scope_province"] = a.get("scope_province")
     return base
@@ -433,6 +452,74 @@ def load_local_feed_sorted(
     from services.local_feed import sort_articles_local_mode
 
     return sort_articles_local_mode(articles, city, province, plan=plan)
+
+
+def local_ranked_feed_ready(city: str, province: str) -> bool:
+    """True when every row in a populated scope has persisted local ordering metadata."""
+    c = (city or "").strip()
+    p = (province or "").strip()
+    if not c or not p:
+        return False
+    engine = get_engine()
+    with engine.connect() as conn:
+        total, missing = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN local_tier IS NULL OR local_score IS NULL THEN 1 ELSE 0 END) AS missing
+                FROM news_local
+                WHERE scope_city = :c AND scope_province = :p
+                """
+            ),
+            {"c": c, "p": p},
+        ).one()
+    return int(total or 0) > 0 and int(missing or 0) == 0
+
+
+def count_local_ranked_articles(city: str, province: str) -> int:
+    """Number of eligible tier 0–3 rows in a persisted local feed."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        n = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM news_local
+                WHERE scope_city = :c AND scope_province = :p
+                  AND local_tier BETWEEN 0 AND 3
+                """
+            ),
+            {"c": city.strip(), "p": province.strip()},
+        ).scalar_one()
+    return int(n)
+
+
+def get_local_ranked_page(
+    offset: int, limit: int, city: str, province: str
+) -> List[Dict]:
+    """Read one already-ranked local page without loading or sorting the full scope."""
+    offset = max(0, int(offset))
+    limit = max(1, min(int(limit), 100))
+    cols = ", ".join(READ_COLUMNS_LOCAL)
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT {cols} FROM news_local
+                WHERE scope_city = :c AND scope_province = :p
+                  AND local_tier BETWEEN 0 AND 3
+                ORDER BY local_tier ASC, local_score DESC, id DESC
+                LIMIT :lim OFFSET :off
+                """
+            ),
+            {
+                "c": city.strip(),
+                "p": province.strip(),
+                "lim": limit,
+                "off": offset,
+            },
+        ).mappings().all()
+    return [_article_from_row(r) for r in rows]
 
 
 def _search_like_pattern(q: str) -> str:
@@ -719,6 +806,10 @@ def _article_from_row(row: Any) -> Dict:
         d["trending_score"] = int(d["trending_score"])
     if d.get("rank_score") is not None:
         d["rank_score"] = float(d["rank_score"])
+    if d.get("local_tier") is not None:
+        d["local_tier"] = int(d["local_tier"])
+    if d.get("local_score") is not None:
+        d["local_score"] = float(d["local_score"])
     return d
 
 
