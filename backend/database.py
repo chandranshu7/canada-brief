@@ -196,6 +196,27 @@ def _try_unique_news_link_index(conn) -> None:
         print(f"[db] unique index on news(link) skipped (duplicates or backend): {e}")
 
 
+def _ensure_read_indexes(conn) -> None:
+    """Indexes for ranked pagination and frequently repeated local-scope reads."""
+    statements = (
+        """
+        CREATE INDEX IF NOT EXISTS ix_news_rank
+        ON news (COALESCE(rank_score, 0) DESC, id DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_news_local_scope
+        ON news_local (scope_city, scope_province)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_news_local_scope_updated
+        ON news_local (scope_city, scope_province, last_updated_at DESC)
+        """,
+    )
+    for statement in statements:
+        conn.execute(text(statement))
+    print("[db] feed read indexes ensured")
+
+
 def _migrate_add_missing_columns(conn) -> None:
     """ALTER TABLE ADD COLUMN for any new fields (e.g. topic_category) without wiping data."""
     insp = inspect(conn)
@@ -228,6 +249,7 @@ def init_db() -> None:
         _migrate_add_missing_columns(conn)
         if inspect(engine).has_table("news"):
             _try_unique_news_link_index(conn)
+        _ensure_read_indexes(conn)
 
     if _schema_ok(engine):
         print("[db] news + news_local table schemas OK")
@@ -239,6 +261,7 @@ def init_db() -> None:
         conn.execute(text("DROP TABLE IF EXISTS news"))
         metadata.create_all(conn)
         _try_unique_news_link_index(conn)
+        _ensure_read_indexes(conn)
     print("[db] Created news and news_local tables")
 
 
