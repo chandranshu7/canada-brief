@@ -98,7 +98,7 @@ export async function fetchNewsPage(options: {
 
   const url = `${base}/news?${params.toString()}`;
   const res = await fetch(url, {
-    cache: "no-store",
+    cache: refresh ? "no-store" : "default",
     headers: refresh
       ? { "Cache-Control": "no-cache", Pragma: "no-cache" }
       : undefined,
@@ -157,7 +157,7 @@ export async function fetchDailyBrief(
   apiBase?: string,
 ): Promise<DailyBriefResponse> {
   const base = (apiBase ?? DEFAULT_BASE).replace(/\/$/, "");
-  const res = await fetch(`${base}/daily-brief`, { cache: "no-store" });
+  const res = await fetch(`${base}/daily-brief`, { cache: "default" });
   if (!res.ok) {
     throw new Error(`Failed to load Daily Brief (${res.status})`);
   }

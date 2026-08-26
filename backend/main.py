@@ -82,6 +82,16 @@ from services.summarize import display_summary_for_response
 PAGE_SIZE = 15
 TOP_STORIES_LIMIT = 3
 LOCAL_INGEST_MAX_AGE_SEC = int(os.environ.get("LOCAL_INGEST_MAX_AGE_SEC", "900"))
+NEWS_CACHE_MAX_AGE_SEC = int(os.environ.get("NEWS_CACHE_MAX_AGE_SEC", "30"))
+DAILY_BRIEF_CACHE_MAX_AGE_SEC = int(
+    os.environ.get("DAILY_BRIEF_CACHE_MAX_AGE_SEC", "300")
+)
+
+
+def _public_cache_control(max_age: int) -> str:
+    """Short shared-cache policy with a bounded stale response fallback."""
+    ttl = max(0, int(max_age))
+    return f"public, max-age={ttl}, s-maxage={ttl}, stale-while-revalidate={ttl * 4}"
 
 
 def _search_query_term(q: Optional[str], search: Optional[str]) -> str:
@@ -1072,9 +1082,17 @@ def get_news(
         story_cursor, total, city_clean, province_clean, mode_clean
     )
 
+    cache_control = (
+        "no-store"
+        if refresh or pending_on_page > 0
+        else _public_cache_control(NEWS_CACHE_MAX_AGE_SEC)
+    )
     return JSONResponse(
         content=jsonable_encoder(payload),
-        headers={"X-Total-Count": str(total)},
+        headers={
+            "X-Total-Count": str(total),
+            "Cache-Control": cache_control,
+        },
     )
 
 
@@ -1085,7 +1103,12 @@ def daily_brief():
     same-day (UTC) items. Refreshed on a short TTL and whenever new rows are inserted (max id).
     """
     payload = get_daily_brief_payload()
-    return JSONResponse(content=jsonable_encoder(payload))
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        headers={
+            "Cache-Control": _public_cache_control(DAILY_BRIEF_CACHE_MAX_AGE_SEC)
+        },
+    )
 
 
 @app.post("/ingest/run")
